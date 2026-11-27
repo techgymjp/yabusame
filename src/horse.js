@@ -5,6 +5,7 @@ import { robeTexture, furTexture, hairCardTexture } from './textures.js';
 import { loft } from './loft.js';
 
 const TAU = Math.PI * 2;
+const ease = t => t * t * (3 - 2 * t);
 const up = new THREE.Vector3(0, 1, 0);
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
 const _m = new THREE.Matrix4();
@@ -122,7 +123,7 @@ export class Rider {
     // 綾藺笠（あやいがさ）
     const hat = new THREE.Group();
     hat.position.y = 0.09;
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.33, 0.035, 28), straw);
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.245, 0.03, 28), straw);
     brim.castShadow = true;
     hat.add(brim);
     const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.1, 18), straw);
@@ -131,7 +132,7 @@ export class Rider {
     const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.12, 12), dark);
     knob.position.y = 0.14;
     hat.add(knob);
-    const band = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.012, 6, 28), dark);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.01, 6, 28), dark);
     band.rotation.x = Math.PI / 2;
     hat.add(band);
     this.headGroup.add(hat);
@@ -147,8 +148,10 @@ export class Rider {
     this.armParts = [this.armL.up, this.armL.fo, this.armL.hand, this.armR.up, this.armR.fo, this.armR.hand, ...this.sleeves];
 
     // 三人称用の弓と矢（ワールド直下に配置）
-    this.bow = new Bow();
+    this.bow = new Bow(0.017);
+    this.bow.stringRadius = 0.003;
     this.arrow = makeArrow();
+    this.arrow.scale.set(1.6, 1.6, 1);
     this.eye = new THREE.Vector3();
   }
 
@@ -173,83 +176,115 @@ export class Rider {
     this.root.position.y = 0.36 - this.horse.bob * 0.75;
     this.root.rotation.z = -this.horse.body.rotation.z * 0.8;
     this.root.rotation.x = -this.horse.body.rotation.x;
-    const torsoYaw = THREE.MathUtils.clamp(aimYaw * 0.7, -0.5, 1.25);
+    const rel = releaseT < 1.1;
+    const zan = rel ? 1 - THREE.MathUtils.smoothstep(releaseT, 0.55, 1.05) : 0; // 残心
+    // 構え具合 0..1（打起し以降は弓を的へ向け、体を横向きにする）
+    const engage = rel ? zan : Math.min(1, raise * 1.2);
+    // 胴造り：左肩を的へ向けた横向きの姿勢（胴の向き = 狙い - 90°）
+    const sideOn = THREE.MathUtils.clamp(aimYaw - Math.PI / 2, -1.1, 0.9);
+    const torsoYaw = THREE.MathUtils.lerp(THREE.MathUtils.clamp(aimYaw * 0.4, -0.3, 0.6), sideOn, engage);
     this.torso.rotation.y = torsoYaw;
-    this.torso.rotation.z = THREE.MathUtils.clamp(aimPitch * 0.3, -0.15, 0.15) + 0.05;
+    this.torso.rotation.z = 0.04;
     this.headGroup.rotation.order = 'YZX';
-    this.headGroup.rotation.y = THREE.MathUtils.clamp(aimYaw - torsoYaw, -1.2, 1.2);
+    this.headGroup.rotation.y = THREE.MathUtils.clamp(aimYaw - torsoYaw, -1.65, 1.65);
     this.headGroup.rotation.z = aimPitch * 0.6;
 
     // 脚
     for (const L of this.legs) {
       const hip = _a.set(0, -0.05, L.s * 0.13);
       const knee = _b.set(0.17, -0.35 - this.horse.bob * 0.2, L.s * 0.33);
-      const foot = new THREE.Vector3(0.12, -0.9 + 0.36 - 0.36, L.s * 0.42);
-      foot.y = -0.9 - (this.root.position.y - 0.36);
+      const foot = new THREE.Vector3(0.12, -0.9 - (this.root.position.y - 0.36), L.s * 0.42);
       stretch(L.thigh, hip, knee);
       stretch(L.shin, knee, foot);
       L.foot.position.copy(foot).add(new THREE.Vector3(0.05, -0.02, 0));
     }
 
-    // ワールドでの手の位置を求めてから胴体ローカルへ
     this.root.updateWorldMatrix(true, true);
     this.headGroup.getWorldPosition(this.eye);
     this.eye.addScaledVector(aimDir, 0.06);
-    const shoulderL = new THREE.Vector3(0, 0.56, -0.22).applyMatrix4(this.torso.matrixWorld);
-    // 打起し：弓を頭上へ掲げ、引分けで目の高さへ下ろしながら引く
-    const lift = raise * (1 - draw);
-    const rel = releaseT < 1.1;
-    const zan = rel ? 1 - THREE.MathUtils.smoothstep(releaseT, 0.55, 1.05) : 0; // 残心
-    const lowered = rel ? 1 - zan : 1 - raise;
-    const hl = shoulderL.clone().addScaledVector(aimDir, 0.66 - lowered * 0.25);
-    hl.y += -0.12 - lowered * 0.3 + lift * 0.42;
-    const drawLen = rel ? 0 : BOW.brace + 0.06 + BOW.drawLen * draw + lift * 0.05;
-    const hr = hl.clone().addScaledVector(aimDir, -(drawLen || BOW.brace + 0.06));
-    hr.y += 0.06 + lift * 0.04;
-    if (rel) {
-      // 離れ：右手は後方へ大きく開いて残心
-      const k = Math.min(1, releaseT / 0.12) * zan;
-      const rightDir = new THREE.Vector3().crossVectors(aimDir, up).normalize();
-      hr.copy(hl).addScaledVector(aimDir, -(BOW.brace + 0.06 + BOW.drawLen)).addScaledVector(rightDir, 0.25 * k).addScaledVector(aimDir, -0.15 * k);
-      hr.y += 0.04;
-      hr.lerp(new THREE.Vector3(-0.1, 0.05, 0.3).applyMatrix4(this.torso.matrixWorld), 1 - zan);
-    } else if (nocked < 1) hr.lerp(new THREE.Vector3(-0.2, 0.15, 0.3).applyMatrix4(this.torso.matrixWorld), 1 - nocked);
+    const T = this.torso.matrixWorld;
+    const shL = new THREE.Vector3(0, 0.56, -0.2).applyMatrix4(T);
+    const shR = new THREE.Vector3(0, 0.56, 0.2).applyMatrix4(T);
+    const U = up;
+    const R = new THREE.Vector3().crossVectors(aimDir, U).normalize(); // 的を向いた時の右（右頬側）
+    const strLen = (d) => BOW.brace + 0.02 + BOW.drawLen * d;
 
-    // 弓
+    // 各段階の弓手（左手 hl）と筈（右手 hr）
+    // 会：筈は右頬、弓手は矢の延長上で腕を伸ばす
+    const nockF = this.eye.clone().addScaledVector(U, -0.085).addScaledVector(R, 0.035);
+    const hlF = nockF.clone().addScaledVector(aimDir, strLen(1));
+    // 打起し：弓を頭上へ掲げ、矢はほぼ水平
+    const hlR = this.eye.clone().addScaledVector(U, 0.3).addScaledVector(aimDir, 0.42).addScaledVector(R, 0.04);
+    // 構え：弓は左腰の前に立て、右手は筈に
+    const hl0 = new THREE.Vector3(0.3, 0.12, -0.24).applyMatrix4(T);
+    const hl = new THREE.Vector3(), hr = new THREE.Vector3();
+    let dirA; // 弓手から筈への向き（射手側）
+    if (rel) {
+      // 離れ → 残心：弓手は残し、右手は右後方へ開く
+      hl.copy(hlF).lerp(hl0, 1 - zan);
+      const k = Math.min(1, releaseT / 0.1) * zan;
+      hr.copy(nockF).addScaledVector(R, 0.2 * k).addScaledVector(aimDir, -0.22 * k).addScaledVector(U, -0.03 * k);
+      hr.lerp(new THREE.Vector3(0.15, 0.1, 0.25).applyMatrix4(T), 1 - zan);
+      dirA = aimDir.clone().negate();
+    } else {
+      const u = raise + draw;
+      if (u <= 1) {
+        hl.copy(hl0).lerp(hlR, ease(u));
+      } else {
+        hl.copy(hlR).lerp(hlF, ease(u - 1));
+      }
+      // 筈は弓手から射手側へ「弦の位置 + 引き尺」だけ離れる
+      const target = u <= 1 ? hl.clone().addScaledVector(aimDir, -1).lerp(hl.clone().addScaledVector(U, -1), 1 - u)
+        : this.eye.clone().addScaledVector(U, THREE.MathUtils.lerp(0.25, -0.085, ease(u - 1))).addScaledVector(R, 0.035);
+      dirA = target.sub(hl).normalize();
+      hr.copy(hl).addScaledVector(dirA, strLen(draw));
+      if (nocked < 1) hr.lerp(new THREE.Vector3(-0.15, 0.1, 0.28).applyMatrix4(T), 1 - nocked); // 箙から矢を取る
+    }
+
+    // 弓：握り = 弓手。射手側(+Z) = dirA
     const bg = this.bow.group;
     bg.position.copy(hl);
-    const zAxis = _a.copy(aimDir).negate();
-    const yAxis = _b.copy(up).addScaledVector(zAxis, -up.dot(zAxis)).normalize();
-    yAxis.applyAxisAngle(zAxis, -0.12 - lowered * 0.4);
+    const zAxis = _a.copy(dirA);
+    const yAxis = _b.copy(U).addScaledVector(zAxis, -U.dot(zAxis)).normalize();
+    yAxis.applyAxisAngle(zAxis, -0.1);
     const xAxis = _c.crossVectors(yAxis, zAxis);
     _m.makeBasis(xAxis, yAxis, zAxis);
     bg.quaternion.setFromRotationMatrix(_m);
-    if (rel) bg.rotateY(-2.75 * Math.min(1, releaseT / 0.16) * zan);
+    if (rel) bg.rotateY(-2.75 * (1 - Math.pow(1 - Math.min(1, releaseT / 0.16), 3)) * zan); // 弓返り
     this.bow.setDraw(rel ? 0 : draw);
-    const nockW = this.bow.nock.clone().applyMatrix4(bg.updateMatrixWorld() || bg.matrixWorld);
     this.arrow.visible = !!this.arrowVisibleAllowed && nocked > 0.5 && !rel;
-    this.arrow.position.copy(nocked > 0.99 ? nockW : hr);
-    this.arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), aimDir);
+    this.arrow.position.copy(hr);
+    this.arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), dirA.clone().negate());
 
-    const inv = new THREE.Matrix4().copy(this.torso.matrixWorld).invert();
-    const setArm = (arm, shoulderLocal, handWorld, out, sleeve) => {
-      const hand = handWorld.clone().applyMatrix4(inv);
-      const sh = shoulderLocal;
-      const mid = sh.clone().lerp(hand, 0.5);
-      mid.z += out * 0.12;
-      mid.y -= 0.08;
-      stretch(arm.up, sh, mid);
-      stretch(arm.fo, mid, hand);
-      arm.hand.position.copy(hand);
-      // 袖は上腕から下へ垂れる
-      const ax = mid.clone().sub(sh).normalize();
-      const dn = new THREE.Vector3(0, -1, 0).addScaledVector(ax, ax.y).normalize();
-      const zz = new THREE.Vector3().crossVectors(ax, dn.clone().negate()).normalize();
-      sleeve.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(ax, dn.clone().negate(), zz));
-      sleeve.position.copy(sh).lerp(mid, 0.6).addScaledVector(dn, 0.15);
-      sleeve.scale.set(0.34, 0.32, 1);
-    };
-    setArm(this.armL, new THREE.Vector3(0, 0.56, -0.22), hl, -1, this.sleeves[0]);
-    setArm(this.armR, new THREE.Vector3(0, 0.56, 0.22), hr, 1, this.sleeves[1]);
+    // 腕：二関節の逆運動学（右肘は後ろへ張り、左肘はやや下外へ）
+    const inv = new THREE.Matrix4().copy(T).invert();
+    const poleR = shR.clone().addScaledVector(aimDir, -1).addScaledVector(U, 0.1 + 0.08 * engage).addScaledVector(R, -0.05);
+    const poleL = shL.clone().addScaledVector(U, -1).addScaledVector(R, -0.4);
+    this.solveArm(this.armL, shL, hl, poleL, inv, this.sleeves[0]);
+    this.solveArm(this.armR, shR, hr.clone().addScaledVector(R, 0.02), poleR, inv, this.sleeves[1]);
+  }
+
+  solveArm(arm, S, Hd, pole, inv, sleeve) {
+    const L1 = 0.31, L2 = 0.31;
+    const d0 = S.distanceTo(Hd);
+    const d = Math.min(d0, L1 + L2 - 1e-3);
+    const dir = Hd.clone().sub(S).normalize();
+    const a = (L1 * L1 - L2 * L2 + d * d) / (2 * d);
+    const h = Math.sqrt(Math.max(0, L1 * L1 - a * a));
+    const pd = pole.clone().sub(S);
+    pd.addScaledVector(dir, -pd.dot(dir)).normalize();
+    const E = S.clone().addScaledVector(dir, a).addScaledVector(pd, h);
+    const hand = S.clone().addScaledVector(dir, d);
+    const sL = S.clone().applyMatrix4(inv), eL = E.applyMatrix4(inv), hL = hand.applyMatrix4(inv);
+    stretch(arm.up, sL, eL);
+    stretch(arm.fo, eL, hL);
+    arm.hand.position.copy(hL);
+    // 袖は上腕から下へ垂れる
+    const ax = eL.clone().sub(sL).normalize();
+    const dn = new THREE.Vector3(0, -1, 0).addScaledVector(ax, ax.y).normalize();
+    const zz = new THREE.Vector3().crossVectors(ax, dn.clone().negate()).normalize();
+    sleeve.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(ax, dn.clone().negate(), zz));
+    sleeve.position.copy(sL).lerp(eL, 0.6).addScaledVector(dn, 0.15);
+    sleeve.scale.set(0.34, 0.32, 1);
   }
 }

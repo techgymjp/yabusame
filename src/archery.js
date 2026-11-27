@@ -43,7 +43,7 @@ const featherMat = new THREE.MeshStandardMaterial({ map: featherTexture(), side:
 // 弓の形状：y軸に沿い、握りが原点、射手側が +Z
 function bowCurve(draw) {
   const pts = [];
-  const bend = 0.12 + 0.28 * draw;
+  const bend = 0.12 + 0.36 * draw;
   const shrink = 1 - 0.05 * draw;
   const N = 28;
   for (let i = 0; i <= N; i++) {
@@ -60,7 +60,8 @@ function bowCurve(draw) {
 }
 
 export class Bow {
-  constructor() {
+  constructor(thick = 0.012) {
+    this.thick = thick;
     this.group = new THREE.Group();
     this.mesh = new THREE.Mesh(new THREE.BufferGeometry(), lacquer);
     this.mesh.castShadow = true;
@@ -98,7 +99,7 @@ export class Bow {
       this.lastDraw = draw;
       const curve = bowCurve(draw);
       this.mesh.geometry.dispose();
-      this.mesh.geometry = new THREE.TubeGeometry(curve, 48, 0.012, 6, false);
+      this.mesh.geometry = new THREE.TubeGeometry(curve, 48, this.thick, 8, false);
       this.top.copy(curve.getPoint(1));
       this.bottom.copy(curve.getPoint(0));
       for (const w of this.wraps) {
@@ -171,8 +172,8 @@ const KEYS = [
   // u, 握り位置(カメラ空間), 弓の回転(x,y,z), 筈の引き量(0..1)
   { u: 0, g: [-0.2, -0.3, -0.52], r: [-0.4, 0.3, 0.55], d: 0.02 },
   { u: 1, g: [-0.08, 0.1, -0.72], r: [0.28, 0.05, -0.04], d: 0.06 },
-  { u: 1.5, g: [-0.078, -0.03, -0.71], r: [0.1, 0.0, -0.08], d: 0.55 },
-  { u: 2, g: [-0.075, -0.12, -0.7], r: [0.0, 0.0, -0.1], d: 1.0 },
+  { u: 1.5, g: [-0.06, -0.03, -0.71], r: [0.1, 0.06, -0.08], d: 0.55 },
+  { u: 2, g: [-0.05, -0.11, -0.72], r: [0.0, 0.085, -0.1], d: 1.0 },
 ];
 const ELBOW_L = [[-0.36, -0.62, -0.18], [-0.42, -0.1, -0.36], [-0.42, -0.22, -0.3], [-0.42, -0.26, -0.22]];
 const ELBOW_R = [[0.3, -0.5, 0.0], [0.34, 0.12, -0.08], [0.42, 0.0, 0.02], [0.44, -0.06, 0.2]];

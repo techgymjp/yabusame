@@ -124,7 +124,8 @@ const G = {
   prevState: null,
   diffKey: store.get('yabusame.diff') || 'normal',
   sens: store.get('yabusame.sens') || 1,
-  fp: true,
+  fp: false,
+  camMode: CAM_MODES_DEFAULT(),
   x: COURSE.runup, z: 0, speed: 0,
   yaw: 0.55, pitch: -0.08,
   wantDraw: false, release: false,
@@ -141,6 +142,7 @@ const G = {
   msgTimer: 0,
 };
 const diff = () => DIFF[G.diffKey];
+function CAM_MODES_DEFAULT() { const c = store.get('yabusame.cam'); return ['shoulder', 'fp', 'chase'].includes(c) ? c : 'shoulder'; }
 
 // ---------- UI ----------
 const hudTargets = $('hud-targets');
@@ -270,10 +272,19 @@ $('touch-draw').addEventListener('touchstart', e => { e.preventDefault(); sound.
 $('touch-draw').addEventListener('touchend', e => { e.preventDefault(); if (G.wantDraw) { G.wantDraw = false; G.release = true; } });
 $('touch-cam').addEventListener('touchstart', e => { e.preventDefault(); toggleCam(); });
 
-function toggleCam() {
-  G.fp = !G.fp;
+// 視点：肩越し（標準）→ 一人称 → 後方
+const CAM_MODES = ['shoulder', 'fp', 'chase'];
+const CAM_NAMES = { shoulder: '肩越し視点', fp: '一人称視点', chase: '後方視点' };
+function applyCam() {
+  G.fp = G.camMode === 'fp';
   rider.setFirstPerson(G.fp);
   vm.visible = G.fp;
+}
+function toggleCam() {
+  G.camMode = CAM_MODES[(CAM_MODES.indexOf(G.camMode) + 1) % CAM_MODES.length];
+  store.set('yabusame.cam', G.camMode);
+  applyCam();
+  if (['ready', 'run', 'finish'].includes(G.state)) message(`<small>${CAM_NAMES[G.camMode]}</small>`, 900);
 }
 
 // ---------- 画面遷移 ----------
@@ -329,9 +340,7 @@ function newRun() {
   G.wind.set(Math.cos(ang), 0, Math.sin(ang)).multiplyScalar(Math.random() * d.wind);
   G.finishTimer = 0;
   G.state = 'ready';
-  G.fp = true;
-  rider.setFirstPerson(true);
-  vm.visible = true;
+  applyCam();
   show('title', false); show('result', false); show('pause', false); show('hud', true);
   show('touch', isTouch);
   $('reticle').style.display = 'none';
@@ -398,6 +407,7 @@ function updateTrail(tr, tip, alive, dt) {
 }
 
 // ---------- 射撃 ----------
+const AIM_DIST = 7.5; // 照準点までの距離（的までのおおよその距離）
 const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
 function launchParams(out) {
   // 発射位置と方向（照準点 = 視線上 7m）
@@ -409,7 +419,7 @@ function launchParams(out) {
   } else {
     from = rider.eye.clone().addScaledVector(G.aimDir, 0.8);
     from.y -= 0.1;
-    aimPoint = rider.eye.clone().addScaledVector(G.aimDir, 7);
+    aimPoint = rider.eye.clone().addScaledVector(G.aimDir, AIM_DIST);
   }
   const dir = aimPoint.sub(from).normalize();
   out.from = from;
@@ -651,11 +661,19 @@ function update(dt, rdt) {
     camera.position.copy(rider.eye);
     camera.rotation.set(pitch, -Math.PI / 2 + yaw, roll, 'YXZ');
     camera.fov = THREE.MathUtils.lerp(70 + G.speed * 0.25, 60, G.draw);
+  } else if (G.camMode === 'shoulder') {
+    // 射手の右肩の後ろから：引く右腕・しなる弓・その先の的が一度に見える
+    const right = tmpV.crossVectors(G.aimDir, up).normalize();
+    camera.position.copy(rider.eye).addScaledVector(G.aimDir, -1.35).addScaledVector(up, 0.1).addScaledVector(right, 2.7);
+    if (camera.position.y < 0.6) camera.position.y = 0.6;
+    camera.lookAt(tmpV2.copy(rider.eye).addScaledVector(G.aimDir, 2.3).addScaledVector(up, -0.3));
+    camera.rotateZ(roll * 0.5);
+    camera.fov = THREE.MathUtils.lerp(60, 54, G.draw);
   } else {
     const right = tmpV.crossVectors(G.aimDir, up).normalize();
     camera.position.copy(rider.eye).addScaledVector(G.aimDir, -2.6).addScaledVector(up, 0.55).addScaledVector(right, 0.5);
     if (camera.position.y < 0.5) camera.position.y = 0.5;
-    camera.lookAt(tmpV2.copy(rider.eye).addScaledVector(G.aimDir, 7));
+    camera.lookAt(tmpV2.copy(rider.eye).addScaledVector(G.aimDir, AIM_DIST));
     camera.fov = 65;
   }
   camera.updateProjectionMatrix();
@@ -716,7 +734,7 @@ function update(dt, rdt) {
   $('reticle').style.display = d.reticle !== 'none' && G.wantDraw && G.raise > 0.3 && G.nocked >= 1 ? 'block' : 'none';
   if (!G.fp && d.reticle !== 'none') {
     // 三人称では照準点を投影
-    projV.copy(rider.eye).addScaledVector(G.aimDir, 7).project(camera);
+    projV.copy(rider.eye).addScaledVector(G.aimDir, AIM_DIST).project(camera);
     $('reticle').style.left = ((projV.x + 1) / 2) * 100 + '%';
     $('reticle').style.top = ((1 - projV.y) / 2) * 100 + '%';
   } else {
@@ -829,4 +847,4 @@ function step(n = 1, dt = 1 / 60) {
     updateDust(dt);
   }
 }
-window.__yabusame = { G, world, camera, horse, startRun, newRun, shoot, step, predictImpact };
+window.__yabusame = { G, world, camera, horse, rider, startRun, newRun, shoot, step, predictImpact };

@@ -19,7 +19,9 @@ export const ARROW_PHYS = {
 const lacquer = new THREE.MeshStandardMaterial({ color: 0x24150e, roughness: 0.35, metalness: 0.05 });
 const rattan = new THREE.MeshStandardMaterial({ color: 0x0e0b0a, roughness: 0.5 });
 const gripMat = new THREE.MeshStandardMaterial({ color: 0x7a2418, roughness: 0.8 });
-const stringMat = new THREE.LineBasicMaterial({ color: 0xe9e2cf });
+const stringMeshMat = new THREE.MeshStandardMaterial({ color: 0xf1e9d2, roughness: 0.6 });
+const _sd = new THREE.Vector3();
+const _yUp = new THREE.Vector3(0, 1, 0);
 const shaftMat = new THREE.MeshStandardMaterial({ color: 0xc8b07a, roughness: 0.5 });
 const kaburaMat = new THREE.MeshStandardMaterial({ color: 0x8c5a32, roughness: 0.55 });
 const gloveMat = new THREE.MeshStandardMaterial({ color: 0x8a6a45, roughness: 0.8 });
@@ -74,11 +76,16 @@ export class Bow {
       this.group.add(w);
       this.wraps.push(w);
     }
-    this.stringGeo = new THREE.BufferGeometry();
-    this.stringGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
-    this.string = new THREE.Line(this.stringGeo, stringMat);
-    this.string.frustumCulled = false;
-    this.group.add(this.string);
+    // 弦（細い円柱2本：末弭→筈→本弭）
+    this.strings = [0, 1].map(() => {
+      const g = new THREE.CylinderGeometry(1, 1, 1, 5);
+      g.translate(0, 0.5, 0);
+      const m = new THREE.Mesh(g, stringMeshMat);
+      m.castShadow = true;
+      this.group.add(m);
+      return m;
+    });
+    this.stringRadius = 0.0018;
     this.lastDraw = -1;
     this.top = new THREE.Vector3();
     this.bottom = new THREE.Vector3();
@@ -101,11 +108,18 @@ export class Bow {
       }
     }
     this.nock.set(0, 0.06, BOW.brace + 0.02 + BOW.drawLen * draw);
-    const a = this.stringGeo.attributes.position;
-    a.setXYZ(0, this.top.x, this.top.y, this.top.z);
-    a.setXYZ(1, this.nock.x, this.nock.y, this.nock.z);
-    a.setXYZ(2, this.bottom.x, this.bottom.y, this.bottom.z);
-    a.needsUpdate = true;
+    this.setString(this.nock);
+  }
+
+  setString(n) {
+    const r = this.stringRadius;
+    for (const [m, a] of [[this.strings[0], this.top], [this.strings[1], this.bottom]]) {
+      _sd.subVectors(n, a);
+      const len = _sd.length();
+      m.position.copy(a);
+      m.quaternion.setFromUnitVectors(_yUp, _sd.normalize());
+      m.scale.set(r, len, r);
+    }
   }
 }
 
@@ -151,67 +165,181 @@ const _d = new THREE.Vector3();
 const _negZ = new THREE.Vector3(0, 0, -1);
 const _up = new THREE.Vector3(0, 1, 0);
 
-// 一人称視点で見える弓・矢・手
+// 一人称視点で見える弓・矢・両腕
+// 射法：構え(u=0) → 打起し(u=1) → 引分け → 会(u=2) → 離れ・弓返り → 残心 → 構えへ戻る
+const KEYS = [
+  // u, 握り位置(カメラ空間), 弓の回転(x,y,z), 筈の引き量(0..1)
+  { u: 0, g: [-0.2, -0.3, -0.52], r: [-0.4, 0.3, 0.55], d: 0.02 },
+  { u: 1, g: [-0.08, 0.1, -0.72], r: [0.28, 0.05, -0.04], d: 0.06 },
+  { u: 1.5, g: [-0.078, -0.03, -0.71], r: [0.1, 0.0, -0.08], d: 0.55 },
+  { u: 2, g: [-0.075, -0.12, -0.7], r: [0.0, 0.0, -0.1], d: 1.0 },
+];
+const ELBOW_L = [[-0.36, -0.62, -0.18], [-0.42, -0.1, -0.36], [-0.42, -0.22, -0.3], [-0.42, -0.26, -0.22]];
+const ELBOW_R = [[0.3, -0.5, 0.0], [0.34, 0.12, -0.08], [0.42, 0.0, 0.02], [0.44, -0.06, 0.2]];
+const ease = t => t * t * (3 - 2 * t);
+function poseAt(u, out) {
+  u = THREE.MathUtils.clamp(u, 0, 2);
+  let i = 0;
+  while (i < KEYS.length - 2 && u > KEYS[i + 1].u) i++;
+  const A = KEYS[i], B = KEYS[i + 1];
+  const t = ease((u - A.u) / (B.u - A.u));
+  for (let k = 0; k < 3; k++) {
+    out.g[k] = A.g[k] + (B.g[k] - A.g[k]) * t;
+    out.r[k] = A.r[k] + (B.r[k] - A.r[k]) * t;
+    out.el[k] = ELBOW_L[i][k] + (ELBOW_L[i + 1][k] - ELBOW_L[i][k]) * t;
+    out.er[k] = ELBOW_R[i][k] + (ELBOW_R[i + 1][k] - ELBOW_R[i][k]) * t;
+  }
+  out.d = A.d + (B.d - A.d) * t;
+  return out;
+}
+const skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a77c, roughness: 0.65 });
+const yugakeMat = new THREE.MeshStandardMaterial({ color: 0x9a7048, roughness: 0.85 });
+
+function limb(r1, r2, mat) {
+  const g = new THREE.CylinderGeometry(r2, r1, 1, 12);
+  g.translate(0, 0.5, 0);
+  return new THREE.Mesh(g, mat);
+}
+function setLimb(m, a, b) {
+  _d.subVectors(b, a);
+  const len = _d.length();
+  m.position.copy(a);
+  m.quaternion.setFromUnitVectors(_up, _d.normalize());
+  m.scale.set(1, len, 1);
+}
+
 export class ViewModel {
   constructor(camera) {
     this.root = new THREE.Group();
     camera.add(this.root);
     this.bow = new Bow();
+    this.bow.stringRadius = 0.0016;
     this.bow.mesh.castShadow = false;
     this.root.add(this.bow.group);
+    // 矢は弓の右側（握りの上）に添う。弓の座標系に置く
     this.arrow = makeArrow();
-    this.root.add(this.arrow);
-    const lh = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.09, 0.05), gloveMat);
-    lh.position.set(-0.012, 0.0, 0.01);
+    this.bow.group.add(this.arrow);
+    // 弓手（左手）：握りを包む
+    const lh = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), skinMat);
+    lh.scale.set(0.035, 0.055, 0.04);
+    lh.position.set(-0.01, 0.01, 0.005);
     this.bow.group.add(lh);
-    // 弓手の腕（射籠手）：握りから肩の方へ伸びる
-    const koteMat = new THREE.MeshStandardMaterial({ color: 0x4a2a2e, roughness: 0.75 });
-    const armGeo = new THREE.CylinderGeometry(0.022, 0.032, 0.7, 10);
-    armGeo.translate(0, 0.35, 0);
-    this.forearm = new THREE.Mesh(armGeo, koteMat);
-    this.root.add(this.forearm);
-    this.rightHand = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.07, 0.08), gloveMat);
+    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.011, 0.035, 4, 8), skinMat);
+    thumb.position.set(0.018, 0.05, -0.012);
+    thumb.rotation.z = -0.5;
+    this.bow.group.add(thumb);
+    // 射籠手（左腕）・右腕
+    const koteMat = new THREE.MeshStandardMaterial({ map: koteTexture(), roughness: 0.75 });
+    this.armL = limb(0.026, 0.021, koteMat);
+    this.armR = limb(0.028, 0.022, new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.9 }));
+    this.lastHand = new THREE.Vector3(0.05, -0.08, 0.1);
+    this.root.add(this.armL, this.armR);
+    // 弽（ゆがけ）：右手の鹿革の手袋
+    this.rightHand = new THREE.Group();
+    const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), yugakeMat);
+    palm.scale.set(0.04, 0.05, 0.055);
+    this.rightHand.add(palm);
+    const yThumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.013, 0.05, 4, 8), yugakeMat);
+    yThumb.rotation.x = Math.PI / 2;
+    yThumb.position.set(-0.03, 0.01, -0.03);
+    this.rightHand.add(yThumb);
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.042, 0.06, 12), new THREE.MeshStandardMaterial({ color: 0x5a3a26, roughness: 0.8 }));
+    cuff.rotation.x = Math.PI / 2;
+    cuff.position.z = 0.05;
+    this.rightHand.add(cuff);
     this.root.add(this.rightHand);
-    this.raise = 0;
-    this.root.traverse(o => { if (o.isMesh) { o.castShadow = false; o.renderOrder = 1; } });
+    this.pose = { g: [0, 0, 0], r: [0, 0, 0], el: [0, 0, 0], er: [0, 0, 0], d: 0 };
+    this.relPose = { g: [0, 0, 0], r: [0, 0, 0], el: [0, 0, 0], er: [0, 0, 0], d: 0 };
+    this.restPose = poseAt(0, { g: [0, 0, 0], r: [0, 0, 0], el: [0, 0, 0], er: [0, 0, 0], d: 0 });
+    this.releaseU = 2;
+    this.nockLocal = new THREE.Vector3();
+    this.tmp = new THREE.Vector3();
+    this.root.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = true; } });
   }
 
-  // draw: 0..1 引き具合, raise: 0..1 弓を構える度合い, nocked: 矢をつがえているか(0..1)
-  update(draw, raise, nocked, tremble) {
-    const lowered = 1 - raise;
-    // 握りの位置（カメラ空間）
-    const gx = -0.07 - lowered * 0.2 + tremble.x;
-    const gy = -0.14 - lowered * 0.2 + tremble.y;
-    const gz = -0.72 + lowered * 0.2;
+  // u: 0..2 射法の進行, nocked: 0..1 矢をつがえる進行, releaseT: 離れからの経過秒
+  update(u, nocked, tremble, releaseT, arrowsLeft) {
+    const P = this.pose;
+    let yugaeri = 0, handFly = 0;
+    if (releaseT < 1.1) {
+      // 離れ：弦が戻り、弓が手の内で回り（弓返り）、右手は後ろへ抜ける。残心ののち構えへ戻る
+      poseAt(this.releaseU, this.relPose);
+      const back = ease(THREE.MathUtils.clamp((releaseT - 0.55) / 0.5, 0, 1));
+      const k = 1 - back;
+      for (let i = 0; i < 3; i++) {
+        P.g[i] = this.relPose.g[i] + (this.restPose.g[i] - this.relPose.g[i]) * back;
+        P.r[i] = this.relPose.r[i] + (this.restPose.r[i] - this.relPose.r[i]) * back;
+        P.el[i] = this.relPose.el[i] + (this.restPose.el[i] - this.relPose.el[i]) * back;
+        P.er[i] = this.relPose.er[i] + (this.restPose.er[i] - this.relPose.er[i]) * back;
+      }
+      const snap = Math.min(1, releaseT / 0.09);
+      P.d = 0;
+      // 反動で弓が前へ押し出され、わずかに沈む
+      P.g[0] -= 0.02 * k * snap; P.g[1] -= 0.025 * k * snap; P.g[2] -= 0.03 * k * snap;
+      yugaeri = -2.75 * (1 - Math.pow(1 - Math.min(1, releaseT / 0.16), 3)) * k;
+      handFly = (1 - Math.pow(1 - Math.min(1, releaseT / 0.12), 2)) * k;
+    } else {
+      poseAt(u, P);
+      this.releaseU = Math.max(1, u);
+    }
     const bg = this.bow.group;
-    bg.position.set(gx, gy, gz);
-    bg.rotation.set(-lowered * 0.2, lowered * 0.3, -0.1 + lowered * 0.25);
-    this.bow.setDraw(draw);
-    // 筈（矢の後端）
-    const nock = this.bow.nock.clone();
+    bg.position.set(P.g[0] + tremble.x, P.g[1] + tremble.y, P.g[2]);
+    bg.rotation.set(P.r[0], P.r[1], P.r[2]);
+    bg.rotateY(yugaeri);
+    const drawAmt = THREE.MathUtils.clamp(P.d, 0, 1);
+    this.bow.setDraw(drawAmt);
+    // 筈の位置（弓の座標系）。つがえ中は手前下から差し込む
+    const n = this.nockLocal.copy(this.bow.nock);
+    const showArrow = nocked > 0.01 && releaseT >= 1.1 && arrowsLeft > 0;
+    this.arrow.visible = showArrow;
+    const inn = 1 - nocked;
+    this.arrow.position.set(0.014 + inn * 0.12, n.y + 0.005 - inn * 0.25, n.z + inn * 0.25);
+    this.arrow.rotation.set(-inn * 0.6, inn * 0.3, 0);
+    if (releaseT < 0.09) this.bow.setString(n.set(0, 0.06, BOW.brace + 0.02 + BOW.drawLen * (1 - releaseT / 0.09) * 0.3));
     bg.updateMatrix();
-    nock.applyMatrix4(bg.matrix);
-    this.arrow.visible = nocked > 0.01;
-    this.arrow.position.copy(nock);
-    this.arrow.position.x += 0.012; // 和弓は矢を弓の右側につがえる
-    const tipTarget = new THREE.Vector3(gx + 0.02, gy + 0.075, gz - 0.2);
-    _d.copy(tipTarget).sub(this.arrow.position).normalize();
-    this.arrow.quaternion.setFromUnitVectors(_negZ, _d);
-    // つがえ動作中は手前から差し込む
-    this.arrow.position.z += (1 - nocked) * 0.35;
-    this.arrow.position.y -= (1 - nocked) * 0.15;
-    // 腕は握りから左肩（カメラ空間の左下手前）へ
-    _d.set(-0.34, -0.28, 0.0).sub(bg.position).normalize();
-    this.forearm.position.copy(bg.position).addScaledVector(_d, 0.03);
-    this.forearm.quaternion.setFromUnitVectors(_up, _d);
-    this.rightHand.position.copy(nock).add(new THREE.Vector3(0.03, -0.01, 0.03));
-    this.rightHand.position.z += (1 - nocked) * 0.3;
-    this.rightHand.visible = nocked > 0.95 && this.rightHand.position.z < 0.05;
+    // 右手：筈を持つ（離れの瞬間は後方右へ抜ける）
+    const hand = this.tmp;
+    if (releaseT < 1.1) {
+      // 離れ：筈を放した位置から右後方へ抜け、残心ののち構えの位置へ戻る
+      const back = ease(THREE.MathUtils.clamp((releaseT - 0.55) / 0.5, 0, 1));
+      const restHand = this.arrow.position.clone().applyMatrix4(bg.matrix);
+      hand.copy(this.lastHand);
+      hand.x += handFly * 0.22; hand.y += handFly * 0.05; hand.z += handFly * 0.25;
+      hand.lerp(restHand, back);
+    } else {
+      hand.copy(this.arrow.position).applyMatrix4(bg.matrix);
+      hand.x += 0.035; hand.y -= 0.01; hand.z += 0.02;
+      this.lastHand.copy(hand);
+    }
+    this.rightHand.position.copy(hand);
+    this.rightHand.quaternion.copy(bg.quaternion);
+    const grip = new THREE.Vector3(-0.01, 0.0, 0.01).applyMatrix4(bg.matrix);
+    setLimb(this.armL, new THREE.Vector3(...P.el), grip);
+    setLimb(this.armR, new THREE.Vector3(...P.er).add(new THREE.Vector3(handFly * 0.2, 0, handFly * 0.2)), hand.clone().add(new THREE.Vector3(0, 0, 0.06)));
   }
 
   set visible(v) {
     this.root.visible = v;
   }
+}
+
+function koteTexture() {
+  // 射籠手の錦（金茶の地に紺の文様）
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#6b3a2a';
+  g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = '#d2a64a';
+  g.lineWidth = 3;
+  for (let y = 0; y < 128; y += 32) for (let x = 0; x < 128; x += 32) {
+    g.beginPath(); g.arc(x + 16 + ((y / 32) % 2) * 16, y + 16, 9, 0, Math.PI * 2); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(2, 3);
+  return t;
 }
 
 // 飛翔中の矢

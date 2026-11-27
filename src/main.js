@@ -73,7 +73,7 @@ function addPrint(x, z) {
   prints.count = Math.min(PRINTS, printIdx);
   prints.instanceMatrix.needsUpdate = true;
 }
-const horse = new Horse();
+const horse = new Horse(quality);
 scene.add(horse.root);
 horse.root.traverse(o => { if (o.isMesh) { o.castShadow = true; } });
 const rider = new Rider(horse);
@@ -128,7 +128,7 @@ const G = {
   x: COURSE.runup, z: 0, speed: 0,
   yaw: 0.55, pitch: -0.08,
   wantDraw: false, release: false,
-  draw: 0, raise: 0, nocked: 1, nockTimer: 0, holdFull: 0, creaked: 0,
+  draw: 0, raise: 0, nocked: 1, nockTimer: 0, holdFull: 0, creaked: 0, releaseT: 9, releaseSlow: 0,
   arrowsLeft: 3,
   arrows: [], pieces: [],
   results: [],
@@ -306,7 +306,7 @@ function resume() {
 }
 
 function resetCourse() {
-  for (const a of G.arrows) { scene.remove(a.mesh); a.whistle && a.whistle.stop(); }
+  for (const a of G.arrows) { scene.remove(a.mesh); a.whistle && a.whistle.stop(); if (a.trail) scene.remove(a.trail.mesh); }
   for (const p of G.pieces) scene.remove(p.mesh);
   G.arrows = []; G.pieces = [];
   for (const t of world.targets) {
@@ -322,7 +322,7 @@ function newRun() {
   resetCourse();
   const d = diff();
   G.arrowsLeft = d.arrows;
-  G.draw = 0; G.raise = 0; G.nocked = 1; G.nockTimer = 0;
+  G.draw = 0; G.raise = 0; G.nocked = 1; G.nockTimer = 0; G.releaseT = 9;
   G.yaw = 0.55; G.pitch = -0.08;
   G.results = COURSE.targets.map(t => ({ name: t.name, hit: false, points: 0, r: null }));
   const ang = Math.random() * Math.PI * 2;
@@ -334,7 +334,7 @@ function newRun() {
   vm.visible = true;
   show('title', false); show('result', false); show('pause', false); show('hud', true);
   show('touch', isTouch);
-  $('reticle').style.display = d.reticle === 'none' ? 'none' : 'block';
+  $('reticle').style.display = 'none';
   document.querySelectorAll('#hud-targets .t').forEach(e => (e.className = 't'));
   hint(isTouch ? '「引く」をタップで発進' : 'クリック または スペースで発進');
   const w = G.wind;
@@ -348,8 +348,53 @@ function startRun() {
   sound.init();
   sound.drum();
   message('いんよう、いー', 1500);
-  hint(isTouch ? '画面をなぞって狙い、「引く」を押して離すと放つ' : '左ボタン長押しで弓を引き、離して放つ ／ W・Sで馬速');
+  hint(isTouch ? '「引く」長押しで打起し→引分け→会、離して離れ' : '左ボタン長押しで打起し→引分け→会、離して離れ ／ W・Sで馬速');
   setTimeout(() => { if (G.state === 'run') hint(''); }, 7000);
+}
+
+// ---------- 矢の軌跡（見やすさのための光の尾） ----------
+const TRAIL_N = 48;
+const trailMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false });
+function makeTrail() {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_N * 2 * 3), 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_N * 2 * 4), 4));
+  const idx = [];
+  for (let i = 0; i < TRAIL_N - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  geo.setIndex(idx);
+  geo.setDrawRange(0, 0);
+  const mesh = new THREE.Mesh(geo, trailMat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 2;
+  scene.add(mesh);
+  return { mesh, pts: [], fade: 1 };
+}
+const _tA = new THREE.Vector3(), _tB = new THREE.Vector3();
+function updateTrail(tr, tip, alive, dt) {
+  if (alive) { tr.pts.unshift(tip.clone()); if (tr.pts.length > TRAIL_N) tr.pts.pop(); }
+  else tr.fade -= dt * 1.6;
+  const n = tr.pts.length;
+  const pos = tr.mesh.geometry.attributes.position, col = tr.mesh.geometry.attributes.color;
+  for (let i = 0; i < n; i++) {
+    const p = tr.pts[i];
+    const q = tr.pts[Math.min(n - 1, i + 1)], o = tr.pts[Math.max(0, i - 1)];
+    _tA.subVectors(o, q);
+    _tB.subVectors(camera.position, p);
+    _tA.cross(_tB).normalize();
+    const f = 1 - i / TRAIL_N;
+    const w = 0.006 + 0.012 * f;
+    const near = THREE.MathUtils.smoothstep(p.distanceTo(camera.position), 0.8, 3.5); // 目の前では消す
+    pos.setXYZ(i * 2, p.x + _tA.x * w, p.y + _tA.y * w, p.z + _tA.z * w);
+    pos.setXYZ(i * 2 + 1, p.x - _tA.x * w, p.y - _tA.y * w, p.z - _tA.z * w);
+    const a = f * f * 0.75 * near * Math.max(0, tr.fade);
+    col.setXYZW(i * 2, 1, 0.97, 0.88, a);
+    col.setXYZW(i * 2 + 1, 1, 0.97, 0.88, a);
+  }
+  pos.needsUpdate = true;
+  col.needsUpdate = true;
+  tr.mesh.geometry.setDrawRange(0, Math.max(0, n - 1) * 6);
+  if (tr.fade <= 0) { scene.remove(tr.mesh); tr.mesh.geometry.dispose(); return false; }
+  return true;
 }
 
 // ---------- 射撃 ----------
@@ -388,11 +433,15 @@ function shoot() {
   v.x += G.speed; // 馬の速度は矢に乗る
   const a = new FlyingArrow(scene, lp.from, v);
   a.whistle = sound.whistle();
+  a.trail = makeTrail();
   G.arrows.push(a);
   sound.twang(G.draw);
   G.arrowsLeft--;
   G.nocked = 0;
   G.nockTimer = 0;
+  G.releaseT = 0;
+  G.releaseSlow = 0.45; // 放った矢が見えるよう一瞬スローに
+  G.raise = 0;
   G.draw = 0;
   G.holdFull = 0;
   G.creaked = 0;
@@ -437,7 +486,7 @@ function updateArrows(dt) {
   const n = Math.max(1, Math.ceil(dt / 0.003));
   const h = dt / n;
   for (const a of G.arrows) {
-    if (!a.alive) continue;
+    if (!a.alive) { if (a.trail && !updateTrail(a.trail, a.tip, false, dt)) a.trail = null; continue; }
     a.age += dt;
     for (let s = 0; s < n && a.alive; s++) {
       tmpV.copy(a.tip);
@@ -484,6 +533,7 @@ function updateArrows(dt) {
       if (a.whistle) a.whistle.update(a.vel.length());
     }
     if ((!a.alive || a.falling || a.age > 5) && a.whistle) { a.whistle.stop(); a.whistle = null; }
+    if (a.trail && !updateTrail(a.trail, a.tip, a.alive && !a.falling, dt)) a.trail = null;
     if (a.age > 8) a.alive = false;
   }
 }
@@ -562,20 +612,24 @@ function update(dt, rdt) {
     if (canDraw && G.draw >= 0.25) shoot();
   }
   if (G.wantDraw && canDraw) {
-    G.raise = Math.min(1, G.raise + rdt * 5);
-    if (G.raise > 0.6) G.draw = Math.min(1, G.draw + (dt / 0.75) * (1.15 - G.draw * 0.5));
+    // 打起し（弓を高く掲げる）→ 引分け（引きながら目の高さへ下ろす）→ 会
+    G.raise = Math.min(1, G.raise + dt / 0.32);
+    if (G.raise >= 1) G.draw = Math.min(1, G.draw + (dt / 0.9) * (1.2 - G.draw * 0.5));
     if (G.draw >= 1) G.holdFull += dt;
     if (G.draw > 0.3 && G.creaked === 0) { sound.creak(0.3); G.creaked = 1; }
     if (G.draw > 0.85 && G.creaked === 1) { sound.creak(0.9); G.creaked = 2; }
   } else {
-    G.draw = Math.max(0, G.draw - dt * 3);
-    G.raise = Math.max(0, G.raise - dt * 1.6);
+    // 引くのをやめたら戻す（引き戻してから弓を下ろす）
+    G.draw = Math.max(0, G.draw - dt * 2.2);
+    if (G.draw <= 0) G.raise = Math.max(0, G.raise - dt * 2.2);
     G.holdFull = 0;
     if (G.draw < 0.2) G.creaked = 0;
   }
-  if (G.nocked < 1 && G.arrowsLeft > 0) {
+  G.releaseT += dt;
+  // 残心ののち、箙から次の矢を取ってつがえる
+  if (G.nocked < 1 && G.arrowsLeft > 0 && G.releaseT > 1.0) {
     G.nockTimer += dt;
-    G.nocked = THREE.MathUtils.clamp((G.nockTimer - d.nock * 0.35) / (d.nock * 0.65), 0, 1);
+    G.nocked = THREE.MathUtils.clamp(G.nockTimer / d.nock, 0, 1);
   }
   // 満を持し過ぎると手が震える
   G.holdTremble = Math.max(0, G.holdFull - 1.8) * 0.5;
@@ -590,13 +644,13 @@ function update(dt, rdt) {
   const yaw = G.yaw + sy, pitch = G.pitch + sp;
   G.aimDir.set(Math.cos(pitch) * Math.cos(yaw), Math.sin(pitch), -Math.cos(pitch) * Math.sin(yaw));
 
-  rider.update(G.yaw, G.pitch, G.aimDir, G.draw, G.raise, G.nocked);
+  rider.update(G.yaw, G.pitch, G.aimDir, G.draw, G.raise, G.nocked, G.releaseT);
   rider.setQuiver(Math.max(0, G.arrowsLeft - (G.nocked >= 1 ? 1 : 0)));
 
   if (G.fp) {
     camera.position.copy(rider.eye);
     camera.rotation.set(pitch, -Math.PI / 2 + yaw, roll, 'YXZ');
-    camera.fov = THREE.MathUtils.lerp(70 + G.speed * 0.25, 62, G.raise * G.draw);
+    camera.fov = THREE.MathUtils.lerp(70 + G.speed * 0.25, 60, G.draw);
   } else {
     const right = tmpV.crossVectors(G.aimDir, up).normalize();
     camera.position.copy(rider.eye).addScaledVector(G.aimDir, -2.6).addScaledVector(up, 0.55).addScaledVector(right, 0.5);
@@ -607,7 +661,7 @@ function update(dt, rdt) {
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
   const trem = { x: tr * 0.004 * Math.sin(t * 41), y: tr * 0.004 * Math.sin(t * 33) };
-  vm.update(G.draw, G.raise, G.nocked >= 1 ? 1 : Math.max(0, G.nocked) * (G.arrowsLeft > 0 ? 1 : 0), trem);
+  vm.update(G.raise + G.draw, G.nocked, trem, G.releaseT, G.arrowsLeft);
 
   updateArrows(dt);
   updatePieces(G.pieces, dt);
@@ -658,6 +712,8 @@ function update(dt, rdt) {
       } else imp.style.display = 'none';
     } else imp.style.display = 'none';
   } else imp.style.display = 'none';
+  // 照準点は弓を引いている間だけ表示
+  $('reticle').style.display = d.reticle !== 'none' && G.wantDraw && G.raise > 0.3 && G.nocked >= 1 ? 'block' : 'none';
   if (!G.fp && d.reticle !== 'none') {
     // 三人称では照準点を投影
     projV.copy(rider.eye).addScaledVector(G.aimDir, 7).project(camera);
@@ -716,7 +772,8 @@ function frame(now) {
   last = now;
   // スローモーション（的中時）
   if (G.slowmo > 0) G.slowmo -= rdt;
-  const targetScale = G.slowmo > 0 ? 0.28 : 1;
+  if (G.releaseSlow > 0) G.releaseSlow -= rdt;
+  const targetScale = G.slowmo > 0 ? 0.28 : G.releaseSlow > 0 ? 0.42 : 1;
   G.timeScale += (targetScale - G.timeScale) * Math.min(1, rdt * (targetScale < 1 ? 20 : 4));
   const dt = rdt * G.timeScale;
 

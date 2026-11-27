@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { Sky } from '../vendor/three/addons/Sky.js';
 import * as TX from './textures.js';
+import { buildGrass, buildForest } from './vegetation.js';
 
 export const COURSE = {
   runup: -50,      // 助走開始位置
@@ -21,7 +22,7 @@ export const COURSE = {
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 
-export function buildWorld(scene, renderer) {
+export function buildWorld(scene, renderer, quality = 'high') {
   const world = { flags: [], judges: [], targets: [], crowd: null, sun: null };
 
   // ---------- 空と光 ----------
@@ -49,7 +50,7 @@ export function buildWorld(scene, renderer) {
   scene.environment = pmrem.fromScene(envScene, 0.02).texture;
   scene.environmentIntensity = 0.55;
 
-  scene.fog = new THREE.Fog(0xb9c6cf, 120, 1300);
+  scene.fog = new THREE.Fog(0xc4ced4, 70, 1700);
 
   const hemi = new THREE.HemisphereLight(0xcfe0ff, 0x6b5a3c, 0.9);
   scene.add(hemi);
@@ -71,7 +72,7 @@ export function buildWorld(scene, renderer) {
   // ---------- 地面 ----------
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(3000, 3000),
-    new THREE.MeshStandardMaterial({ map: TX.grassTexture([500, 500]), roughness: 1 })
+    (() => { const t = TX.groundSet('grass', [600, 600]); return new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 1 }); })()
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
@@ -80,7 +81,7 @@ export function buildWorld(scene, renderer) {
   const trackLen = COURSE.stop - COURSE.runup + 40;
   const track = new THREE.Mesh(
     new THREE.PlaneGeometry(trackLen, 3.6),
-    new THREE.MeshStandardMaterial({ map: TX.sandTexture([trackLen / 6, 1]), roughness: 1 })
+    (() => { const t = TX.groundSet('sand', [trackLen / 4, 1]); return new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }); })()
   );
   track.rotation.x = -Math.PI / 2;
   track.position.set((COURSE.runup + COURSE.stop) / 2, 0.012, 0);
@@ -88,7 +89,8 @@ export function buildWorld(scene, renderer) {
   scene.add(track);
 
   // 観客側の踏み固められた地面
-  const pathMat = new THREE.MeshStandardMaterial({ map: TX.sandTexture([trackLen / 8, 2]), color: 0xcbbd9f, roughness: 1 });
+  const pt = TX.groundSet('path', [trackLen / 6, 1]);
+  const pathMat = new THREE.MeshStandardMaterial({ map: pt.map, normalMap: pt.normalMap, roughness: 1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
   for (const z of [-11, 7.5]) {
     const p = new THREE.Mesh(new THREE.PlaneGeometry(trackLen, z < 0 ? 5 : 6), pathMat);
     p.rotation.x = -Math.PI / 2;
@@ -221,20 +223,15 @@ export function buildWorld(scene, renderer) {
     }
   }
 
-  // ---------- 森（杉と紅葉） ----------
-  makeForest(scene);
+  buildGrass(scene, quality);
+  buildForest(scene, quality);
 
-  // ---------- 遠景の山 ----------
-  const mtnMat = new THREE.MeshStandardMaterial({ color: 0x4d6157, roughness: 1, flatShading: true });
-  for (let i = 0; i < 26; i++) {
-    const a = (i / 26) * Math.PI * 2 + rnd(-0.1, 0.1);
-    const r = rnd(900, 1150);
-    const h = rnd(120, 260);
-    const m = new THREE.Mesh(new THREE.ConeGeometry(rnd(220, 380), h, 7), mtnMat);
-    m.position.set(100 + Math.cos(a) * r, h / 2 - 10, Math.sin(a) * r);
-    m.rotation.y = rnd(0, 3);
-    scene.add(m);
-  }
+  // ---------- 遠景の山並み ----------
+  scene.add(makeMountains());
+
+  // ---------- 雲 ----------
+  world.clouds = makeClouds(sunDir);
+  scene.add(world.clouds);
 
   return world;
 }
@@ -349,6 +346,40 @@ export function updateFlags(flags, t, wind) {
   }
 }
 
+// 単純なジオメトリ結合（position/normal/uv）
+function merge(geos) {
+  const out = { position: [], normal: [], uv: [] };
+  for (let g of geos) {
+    g = g.index ? g.toNonIndexed() : g;
+    for (const k of Object.keys(out)) {
+      const at = g.attributes[k];
+      if (at) out[k].push(...at.array);
+      else if (k === 'uv') out[k].push(...new Array((g.attributes.position.count) * 2).fill(0));
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(out.position, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(out.normal, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(out.uv, 2));
+  return geo;
+}
+
+function personBodyGeometry() {
+  // 着物・羽織・コートを思わせる裾広がりのシルエット + 腕
+  const prof = [[0.0, 0], [0.19, 0], [0.2, 0.08], [0.17, 0.45], [0.16, 0.8], [0.19, 1.05], [0.21, 1.2], [0.18, 1.3], [0.07, 1.36], [0.05, 1.42], [0, 1.42]]
+    .map(([r, y]) => new THREE.Vector2(r, y));
+  const body = new THREE.LatheGeometry(prof, 12);
+  body.scale(1, 1, 0.72);
+  const arms = [];
+  for (const s of [-1, 1]) {
+    const arm = new THREE.CylinderGeometry(0.05, 0.065, 0.62, 7);
+    arm.rotateZ(s * 0.12);
+    arm.translate(s * 0.22, 0.95, 0.02);
+    arms.push(arm);
+  }
+  return merge([body, ...arms]);
+}
+
 function makeCrowd(scene) {
   const people = [];
   const addRow = (zMin, zMax, density, xMin, xMax) => {
@@ -366,33 +397,72 @@ function makeCrowd(scene) {
   addRow(9.8, 14.0, 0.7, -19, 9); // 桟敷
 
   const n = people.length;
-  const bodyGeo = new THREE.CylinderGeometry(0.17, 0.24, 1.0, 8);
-  bodyGeo.translate(0, 0.5, 0);
-  const headGeo = new THREE.SphereGeometry(0.11, 10, 8);
-  headGeo.translate(0, 1.2, 0);
-  const bodyMat = new THREE.MeshStandardMaterial({ roughness: 0.85 });
-  const headMat = new THREE.MeshStandardMaterial({ roughness: 0.7 });
-  const bodies = new THREE.InstancedMesh(bodyGeo, bodyMat, n);
-  const heads = new THREE.InstancedMesh(headGeo, headMat, n);
-  const palette = [0x2b3a55, 0x4a2f2a, 0x6a6f74, 0x1e1e22, 0x8a3b2e, 0x3f5a46, 0xb7a58a, 0x7b4f8c, 0xd8d2c4, 0x355c7d, 0xa23b3b, 0xc9a227];
-  const hair = [0x161210, 0x1d1714, 0x2b211b, 0x6b5b4b, 0xbdb8b0];
+  const bodyGeo = personBodyGeometry();
+  const headGeo = new THREE.SphereGeometry(0.105, 12, 10);
+  headGeo.scale(0.95, 1.1, 1);
+  headGeo.translate(0, 1.53, 0.01);
+  const hairGeo = new THREE.SphereGeometry(0.112, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55);
+  hairGeo.rotateX(-0.25);
+  hairGeo.translate(0, 1.55, -0.005);
+  const hatGeo = merge([
+    new THREE.CylinderGeometry(0.17, 0.18, 0.02, 14).translate(0, 1.62, 0),
+    new THREE.CylinderGeometry(0.09, 0.11, 0.1, 14).translate(0, 1.68, 0),
+  ]);
+  const umbGeo = merge([
+    new THREE.ConeGeometry(0.55, 0.3, 16, 1, true).translate(0, 2.05, 0),
+    new THREE.CylinderGeometry(0.01, 0.01, 0.9, 5).translate(0, 1.55, 0),
+  ]);
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.85 });
+  const skinMat = new THREE.MeshStandardMaterial({ roughness: 0.6, color: 0xffffff });
+  const umbMat = new THREE.MeshStandardMaterial({ roughness: 0.7, side: THREE.DoubleSide, transparent: false });
+  const bodies = new THREE.InstancedMesh(bodyGeo, mat, n);
+  const heads = new THREE.InstancedMesh(headGeo, skinMat, n);
+  const hair = new THREE.InstancedMesh(hairGeo, mat, n);
+  const hatList = people.filter(() => Math.random() < 0.16);
+  const umbList = people.filter(p => !hatList.includes(p) && Math.random() < 0.05);
+  const hats = new THREE.InstancedMesh(hatGeo, mat, Math.max(1, hatList.length));
+  const umbs = new THREE.InstancedMesh(umbGeo, umbMat, Math.max(1, umbList.length));
+  hats.count = hatList.length;
+  umbs.count = umbList.length;
+  const palette = [0x2b3a55, 0x4a2f2a, 0x6a6f74, 0x1e1e22, 0x8a3b2e, 0x3f5a46, 0xb7a58a, 0x5b4a6e, 0xd8d2c4, 0x355c7d, 0x7a2e2e, 0x9c7a3c, 0x23272e, 0x56606b, 0xa89f91];
+  const hairCols = [0x141010, 0x1d1714, 0x2b211b, 0x4a3a2c, 0x8f8a84, 0xc9c4bc];
+  const skins = [0xd9a77c, 0xe0b48e, 0xc8946a, 0xe8c2a0];
   const col = new THREE.Color();
   const m4 = new THREE.Matrix4();
   people.forEach((p, i) => {
-    p.h = rnd(0.82, 1.12);
+    const child = Math.random() < 0.08;
+    p.h = child ? rnd(0.6, 0.75) : rnd(0.92, 1.1);
+    p.w = child ? 0.8 : rnd(0.9, 1.15);
     p.ph = Math.random() * 10;
     p.excite = 0;
-    p.facing = p.z < 0 ? 0 : Math.PI;
-    m4.compose(new THREE.Vector3(p.x, 0, p.z), new THREE.Quaternion(), new THREE.Vector3(1, p.h * 1.25, 1));
+    p.q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), (p.z < 0 ? 0 : Math.PI) + rnd(-0.5, 0.5));
+    m4.compose(new THREE.Vector3(p.x, 0, p.z), p.q, new THREE.Vector3(p.w, p.h, p.w));
     bodies.setMatrixAt(i, m4);
     heads.setMatrixAt(i, m4);
-    bodies.setColorAt(i, col.setHex(palette[(Math.random() * palette.length) | 0]));
-    heads.setColorAt(i, col.setHex(Math.random() < 0.7 ? hair[(Math.random() * hair.length) | 0] : 0xd6a582));
+    hair.setMatrixAt(i, m4);
+    bodies.setColorAt(i, col.setHex(palette[(Math.random() * palette.length) | 0]).multiplyScalar(rnd(0.75, 1.1)));
+    heads.setColorAt(i, col.setHex(skins[(Math.random() * skins.length) | 0]));
+    hair.setColorAt(i, col.setHex(hairCols[(Math.random() * hairCols.length) | 0]));
   });
-  bodies.castShadow = true;
-  bodies.receiveShadow = true;
-  heads.castShadow = true;
-  scene.add(bodies, heads);
+  hatList.forEach((p, i) => {
+    p.hat = i;
+    m4.compose(new THREE.Vector3(p.x, 0, p.z), p.q, new THREE.Vector3(p.w, p.h, p.w));
+    hats.setMatrixAt(i, m4);
+    hats.setColorAt(i, col.setHex([0xc8b48a, 0x2a2a2a, 0x6b4b33, 0xe9e2d0][i % 4]));
+  });
+  const umbCols = [0xa0262b, 0x5a2a6a, 0x1f3f78, 0xd28a2d];
+  umbList.forEach((p, i) => {
+    p.umb = i;
+    m4.compose(new THREE.Vector3(p.x, 0, p.z), p.q, new THREE.Vector3(1, p.h, 1));
+    umbs.setMatrixAt(i, m4);
+    umbs.setColorAt(i, col.setHex(umbCols[i % umbCols.length]));
+  });
+  for (const im of [bodies, heads, hair, hats, umbs]) {
+    im.castShadow = true;
+    im.receiveShadow = true;
+    im.computeBoundingSphere();
+  }
+  scene.add(bodies, heads, hair, hats, umbs);
 
   // ロープ
   const ropeMat = new THREE.MeshStandardMaterial({ color: 0xe6dcc3, roughness: 0.9 });
@@ -402,7 +472,7 @@ function makeCrowd(scene) {
     rope.position.set(115, 0.9, z);
     scene.add(rope);
   }
-  return { people, bodies, heads, active: false, m4, v: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3() };
+  return { people, parts: [bodies, heads, hair], hats, umbs, active: false, m4, v: new THREE.Vector3(), s: new THREE.Vector3() };
 }
 
 export function exciteCrowd(crowd, x, amount = 1) {
@@ -417,7 +487,7 @@ export function exciteCrowd(crowd, x, amount = 1) {
 export function updateCrowd(crowd, dt, t) {
   if (!crowd.active) return;
   let any = false;
-  const { m4, v, q, s } = crowd;
+  const { m4, v, s } = crowd;
   crowd.people.forEach((p, i) => {
     if (p.excite <= 0 && !p.dirty) return;
     p.excite = Math.max(0, p.excite - dt * 0.35);
@@ -425,83 +495,99 @@ export function updateCrowd(crowd, dt, t) {
     any = true;
     const jump = Math.max(0, Math.sin(t * 9 + p.ph)) * 0.12 * p.excite;
     v.set(p.x, jump, p.z);
-    s.set(1, p.h * 1.25, 1);
-    m4.compose(v, q, s);
-    crowd.bodies.setMatrixAt(i, m4);
-    crowd.heads.setMatrixAt(i, m4);
+    s.set(p.w, p.h, p.w);
+    m4.compose(v, p.q, s);
+    for (const im of crowd.parts) im.setMatrixAt(i, m4);
+    if (p.hat !== undefined) crowd.hats.setMatrixAt(p.hat, m4);
+    if (p.umb !== undefined) { s.set(1, p.h, 1); m4.compose(v, p.q, s); crowd.umbs.setMatrixAt(p.umb, m4); }
   });
-  crowd.bodies.instanceMatrix.needsUpdate = true;
-  crowd.heads.instanceMatrix.needsUpdate = true;
+  for (const im of [...crowd.parts, crowd.hats, crowd.umbs]) im.instanceMatrix.needsUpdate = true;
   if (!any) crowd.active = false;
 }
 
-function makeForest(scene) {
-  const cedars = [];
-  const placeBand = (zMin, zMax, xMin, xMax, count) => {
-    for (let i = 0; i < count; i++) cedars.push([rnd(xMin, xMax), rnd(zMin, zMax), rnd(0.8, 1.3)]);
-  };
-  placeBand(-75, -19, -160, 420, 520);
-  placeBand(19, 75, -160, 420, 520);
-  placeBand(-19, 19, -170, -75, 90);
-  placeBand(-19, 19, 345, 420, 80);
-  const filtered = cedars.filter(([x, z]) => !(Math.abs(z) < 16 && x > -70 && x < 335));
-
-  const trunkGeo = new THREE.CylinderGeometry(0.18, 0.42, 1, 7);
-  trunkGeo.translate(0, 0.5, 0);
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6a4a36, roughness: 1 });
-  const coneGeo = new THREE.ConeGeometry(1, 1, 9);
-  coneGeo.translate(0, 0.5, 0);
-  const leafMat = new THREE.MeshStandardMaterial({ color: 0x2c4a2e, roughness: 0.95, flatShading: true });
-  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, filtered.length);
-  const layers = 4;
-  const cones = new THREE.InstancedMesh(coneGeo, leafMat, filtered.length * layers);
-  const m4 = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  const col = new THREE.Color();
-  let k = 0;
-  filtered.forEach(([x, z, s], i) => {
-    const h = 26 * s;
-    m4.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(s, h * 0.75, s));
-    trunks.setMatrixAt(i, m4);
-    for (let l = 0; l < layers; l++) {
-      const y = h * (0.3 + l * 0.17);
-      const r = (3.0 - l * 0.6) * s;
-      m4.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(r, h * 0.32, r));
-      cones.setMatrixAt(k, m4);
-      cones.setColorAt(k, col.setHSL(rnd(0.27, 0.36), rnd(0.25, 0.4), rnd(0.2, 0.3)));
-      k++;
-    }
-  });
-  trunks.castShadow = true;
-  cones.castShadow = true;
-  scene.add(trunks, cones);
-
-  // 紅葉（もみじ・いちょう）
-  const maples = [];
-  for (let i = 0; i < 90; i++) {
-    const side = Math.random() < 0.5 ? -1 : 1;
-    maples.push([rnd(-60, 330), side * rnd(16.5, 22), rnd(0.8, 1.3)]);
+// 簡易ハッシュノイズ
+function hash(x, y) {
+  const h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return h - Math.floor(h);
+}
+function vnoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function ridged(x, y) {
+  let v = 0, amp = 0.55, f = 1;
+  for (let o = 0; o < 6; o++) {
+    const n = 1 - Math.abs(vnoise(x * f, y * f) * 2 - 1);
+    v += n * n * amp;
+    amp *= 0.5; f *= 2.03;
   }
-  const blobGeo = new THREE.IcosahedronGeometry(1, 1);
-  const blobMat = new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true });
-  const blobs = new THREE.InstancedMesh(blobGeo, blobMat, maples.length * 4);
-  const mt = new THREE.InstancedMesh(trunkGeo, trunkMat, maples.length);
-  k = 0;
-  maples.forEach(([x, z, s], i) => {
-    m4.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(s * 0.6, 4 * s, s * 0.6));
-    mt.setMatrixAt(i, m4);
-    const ginkgo = Math.random() < 0.3;
-    for (let b = 0; b < 4; b++) {
-      const r = rnd(1.6, 2.4) * s;
-      m4.compose(new THREE.Vector3(x + rnd(-1.5, 1.5) * s, (4.5 + rnd(-0.5, 1.8)) * s, z + rnd(-1.5, 1.5) * s), q,
-        new THREE.Vector3(r, r * 0.85, r));
-      blobs.setMatrixAt(k, m4);
-      if (ginkgo) blobs.setColorAt(k, col.setHSL(rnd(0.11, 0.14), 0.85, rnd(0.45, 0.55)));
-      else blobs.setColorAt(k, col.setHSL(rnd(0.0, 0.05), rnd(0.7, 0.85), rnd(0.32, 0.45)));
-      k++;
+  return v;
+}
+
+function makeMountains() {
+  const R0 = 380, R1 = 1600, NR = 70, NA = 300;
+  const pos = [], col = [], idx = [];
+  const c = new THREE.Color();
+  for (let i = 0; i <= NR; i++) {
+    const r = R0 + (R1 - R0) * Math.pow(i / NR, 1.4);
+    for (let j = 0; j <= NA; j++) {
+      const a = (j / NA) * Math.PI * 2;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      const env = THREE.MathUtils.smoothstep(r, R0, R0 + 350);
+      const big = 0.5 + 0.5 * Math.sin(a * 3 + 1.3) * Math.sin(a * 5 + 0.4);
+      const h = env * (40 + ridged(x * 0.0022 + 7, z * 0.0022 + 3) * (180 + big * 260)) - (1 - env) * 2;
+      pos.push(x + 120, h, z);
+      const t = THREE.MathUtils.clamp(h / 380, 0, 1);
+      c.setHSL(0.3 - t * 0.06, 0.3 - t * 0.12, 0.14 + t * 0.12);
+      col.push(c.r, c.g, c.b);
     }
+  }
+  for (let i = 0; i < NR; i++) {
+    for (let j = 0; j < NA; j++) {
+      const a = i * (NA + 1) + j, b = a + NA + 1;
+      idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: false }));
+  m.receiveShadow = false;
+  return m;
+}
+
+function makeClouds(sunDir) {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uSun: { value: sunDir.clone() } },
+    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `
+      uniform float uTime; uniform vec3 uSun; varying vec3 vDir;
+      float h(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+      float n(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
+        return mix(mix(h(i),h(i+vec2(1,0)),f.x), mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x), f.y); }
+      float fbm(vec2 p){ float v=0., a=.5; for(int i=0;i<6;i++){ v+=a*n(p); p=p*2.03+vec2(1.7,9.2); a*=.5; } return v; }
+      void main(){
+        if (vDir.y < 0.01) discard;
+        vec2 uv = vDir.xz / (vDir.y + 0.12) * 1.4 + vec2(uTime * 0.004, uTime * 0.0015);
+        float d = fbm(uv);
+        float d2 = fbm(uv * 2.3 + 4.0);
+        float cov = smoothstep(0.5, 0.78, d * 0.75 + d2 * 0.35);
+        // 太陽側の縁が明るく、底は灰色がかる
+        float shade = fbm(uv + uSun.xz * 0.06);
+        vec3 col = mix(vec3(0.62,0.66,0.72), vec3(1.0,0.97,0.92), clamp(1.2 - (shade - d) * 6.0, 0.0, 1.0));
+        float horizon = smoothstep(0.01, 0.2, vDir.y);
+        gl_FragColor = vec4(col * 1.6, cov * horizon * 0.92);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: false, side: THREE.BackSide, fog: false,
   });
-  blobs.castShadow = true;
-  mt.castShadow = true;
-  scene.add(blobs, mt);
+  const m = new THREE.Mesh(new THREE.SphereGeometry(4000, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2), mat);
+  m.renderOrder = -1;
+  m.frustumCulled = false;
+  return m;
 }

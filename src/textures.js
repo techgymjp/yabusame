@@ -277,3 +277,241 @@ export function furTexture() {
   }
   return finish(c, { repeat: [1, 1] });
 }
+
+// ---------- 高品質化用：ノイズ・法線マップ・葉カード ----------
+
+// 値ノイズ（タイル可能）
+function makeNoise(size, seed = 1) {
+  let s = seed * 9301 + 49297;
+  const rnd = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+  const g = new Float32Array(size * size);
+  for (let i = 0; i < g.length; i++) g[i] = rnd();
+  return (x, y) => {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const a = g[((yi % size + size) % size) * size + ((xi % size + size) % size)];
+    const b = g[((yi % size + size) % size) * size + (((xi + 1) % size + size) % size)];
+    const c = g[(((yi + 1) % size + size) % size) * size + ((xi % size + size) % size)];
+    const d = g[(((yi + 1) % size + size) % size) * size + (((xi + 1) % size + size) % size)];
+    const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  };
+}
+function fbm(noise, x, y, oct, baseFreq) {
+  let v = 0, amp = 0.5, f = 1;
+  for (let o = 0; o < oct; o++) {
+    v += noise(x * f, y * f) * amp;
+    amp *= 0.5; f *= 2;
+  }
+  return v;
+}
+
+// 高さ配列から法線マップ（タイル可能）
+function heightToNormal(h, w, hh, strength) {
+  const c = makeCanvas(w, hh);
+  const g = c.getContext('2d');
+  const img = g.createImageData(w, hh);
+  for (let y = 0; y < hh; y++) {
+    for (let x = 0; x < w; x++) {
+      const l = h[y * w + ((x - 1 + w) % w)], r = h[y * w + ((x + 1) % w)];
+      const u = h[((y - 1 + hh) % hh) * w + x], d = h[((y + 1) % hh) * w + x];
+      let nx = (l - r) * strength, ny = (d - u) * strength, nz = 1;
+      const len = Math.hypot(nx, ny, nz);
+      const i = (y * w + x) * 4;
+      img.data[i] = ((nx / len) * 0.5 + 0.5) * 255;
+      img.data[i + 1] = ((ny / len) * 0.5 + 0.5) * 255;
+      img.data[i + 2] = ((nz / len) * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
+// 地表（草地の下地・砂・土）の PBR セット
+export function groundSet(kind, repeat) {
+  const S = 512;
+  const noise = makeNoise(64, kind === 'sand' ? 3 : kind === 'path' ? 7 : 5);
+  const noise2 = makeNoise(128, 11);
+  const h = new Float32Array(S * S);
+  const c = makeCanvas(S, S);
+  const g = c.getContext('2d');
+  const img = g.createImageData(S, S);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const u = x / S, v = y / S;
+      const n1 = fbm(noise, u * 8, v * 8, 5);
+      const n2 = noise2(u * 128, v * 128);
+      let r, gg, b, height;
+      if (kind === 'sand') {
+        // 蹄で掘り返された砂：進行方向（u）に伸びた筋と粒
+        const streak = fbm(noise, u * 3, v * 24, 4);
+        const pebble = n2 > 0.86 ? (n2 - 0.86) * 6 : 0;
+        height = streak * 0.6 + n2 * 0.35 + pebble;
+        const k = 0.72 + streak * 0.35 + (n2 - 0.5) * 0.18 - pebble * 0.3;
+        r = 178 * k; gg = 146 * k; b = 104 * k;
+      } else if (kind === 'path') {
+        height = n1 * 0.6 + n2 * 0.4;
+        const k = 0.75 + n1 * 0.35 + (n2 - 0.5) * 0.15;
+        r = 150 * k; gg = 128 * k; b = 96 * k;
+      } else {
+        // 草地の下地（枯れ草と土の混じり）
+        const dirt = THREE.MathUtils.smoothstep(n1, 0.55, 0.75);
+        height = n1 * 0.5 + n2 * 0.5;
+        const k = 0.7 + (n2 - 0.5) * 0.5;
+        const grR = 92 + n1 * 40, grG = 104 + n1 * 30, grB = 48;
+        r = (grR * (1 - dirt) + 120 * dirt) * k;
+        gg = (grG * (1 - dirt) + 98 * dirt) * k;
+        b = (grB * (1 - dirt) + 66 * dirt) * k;
+      }
+      h[y * S + x] = height;
+      const i = (y * S + x) * 4;
+      img.data[i] = r; img.data[i + 1] = gg; img.data[i + 2] = b; img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const map = finish(c, { repeat });
+  const normalMap = finish(heightToNormal(h, S, S, kind === 'sand' ? 5 : 3), { repeat, srgb: false });
+  return { map, normalMap };
+}
+
+// 樹皮（杉の縦に裂けた皮）
+export function barkSet() {
+  const W = 256, H = 512;
+  const noise = makeNoise(64, 21);
+  const h = new Float32Array(W * H);
+  const c = makeCanvas(W, H);
+  const g = c.getContext('2d');
+  const img = g.createImageData(W, H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const u = x / W, v = y / H;
+      const fib = fbm(noise, u * 22, v * 3, 4);
+      const crack = Math.pow(Math.abs(Math.sin((u * 14 + fbm(noise, u * 4, v * 6, 3) * 2) * Math.PI)), 0.35);
+      const height = fib * 0.6 + crack * 0.5;
+      h[y * W + x] = height;
+      const k = 0.45 + height * 0.55;
+      const i = (y * W + x) * 4;
+      img.data[i] = 128 * k; img.data[i + 1] = 84 * k; img.data[i + 2] = 60 * k; img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return {
+    map: finish(c, { repeat: [2, 6] }),
+    normalMap: finish(heightToNormal(h, W, H, 6), { repeat: [2, 6], srgb: false }),
+  };
+}
+
+// 杉の葉の房（アルファ付き、白基調でインスタンス色で着色）
+export function needleCardTexture() {
+  const S = 256;
+  const c = makeCanvas(S, S);
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, S, S);
+  const branch = (x, y, ang, len, w, depth) => {
+    const x2 = x + Math.cos(ang) * len, y2 = y + Math.sin(ang) * len;
+    g.strokeStyle = `rgb(${60 + depth * 20},${70 + depth * 25},${50 + depth * 10})`;
+    g.lineWidth = w;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x2, y2); g.stroke();
+    // 細かい葉
+    const n = Math.floor(len / 3);
+    for (let i = 0; i < n; i++) {
+      const t = i / n;
+      const px = x + (x2 - x) * t, py = y + (y2 - y) * t;
+      for (const s of [-1, 1]) {
+        const a = ang + s * (0.6 + Math.random() * 0.3);
+        const l = (1 - t * 0.6) * (7 + Math.random() * 5);
+        const v = 150 + Math.random() * 105;
+        g.strokeStyle = `rgba(${v},${v},${v},0.95)`;
+        g.lineWidth = 1.6;
+        g.beginPath(); g.moveTo(px, py); g.lineTo(px + Math.cos(a) * l, py + Math.sin(a) * l); g.stroke();
+      }
+    }
+    if (depth < 2) {
+      for (let i = 1; i <= 3; i++) {
+        const t = i / 4;
+        branch(x + (x2 - x) * t, y + (y2 - y) * t, ang + (i % 2 ? 0.7 : -0.7), len * 0.45, w * 0.6, depth + 1);
+      }
+    }
+  };
+  for (let k = 0; k < 5; k++) branch(S / 2, S * 0.95, -Math.PI / 2 + (k - 2) * 0.35, S * 0.55, 3, 0);
+  const t = finish(c);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
+
+// 広葉（もみじ）の葉カード：白基調
+export function leafCardTexture() {
+  const S = 256;
+  const c = makeCanvas(S, S);
+  const g = c.getContext('2d');
+  const leaf = (x, y, r, rot) => {
+    g.save();
+    g.translate(x, y);
+    g.rotate(rot);
+    const v = 170 + Math.random() * 85;
+    g.fillStyle = `rgb(${v},${v},${v})`;
+    g.beginPath();
+    for (let i = 0; i <= 14; i++) {
+      // 七裂のもみじ形
+      const a = (i / 14) * Math.PI * 2;
+      const rr = i % 2 ? r * 0.45 : r;
+      g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    g.closePath();
+    g.fill();
+    g.restore();
+  };
+  for (let i = 0; i < 160; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const d = Math.sqrt(Math.random()) * S * 0.44;
+    leaf(S / 2 + Math.cos(a) * d, S / 2 + Math.sin(a) * d, 7 + Math.random() * 7, Math.random() * 6);
+  }
+  const t = finish(c);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
+
+// 毛（たてがみ・尾）
+export function hairCardTexture() {
+  const W = 64, H = 256;
+  const c = makeCanvas(W, H);
+  const g = c.getContext('2d');
+  for (let i = 0; i < 90; i++) {
+    const x = Math.random() * W;
+    const len = H * (0.6 + Math.random() * 0.4);
+    const v = 10 + Math.random() * 30;
+    g.strokeStyle = `rgba(${v + 8},${v},${v - 4},${0.5 + Math.random() * 0.5})`;
+    g.lineWidth = 1 + Math.random() * 1.5;
+    g.beginPath();
+    g.moveTo(x, 0);
+    g.bezierCurveTo(x + Math.random() * 8 - 4, len * 0.4, x + Math.random() * 12 - 6, len * 0.7, x + Math.random() * 16 - 8, len);
+    g.stroke();
+  }
+  const t = finish(c);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
+
+// 蹄跡（デカール）
+export function hoofPrintTexture() {
+  const S = 64;
+  const c = makeCanvas(S, S);
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(S / 2, S / 2, 4, S / 2, S / 2, S / 2);
+  grd.addColorStop(0, 'rgba(60,42,26,0.75)');
+  grd.addColorStop(0.55, 'rgba(70,50,30,0.55)');
+  grd.addColorStop(0.7, 'rgba(200,170,120,0.35)');
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd;
+  g.beginPath();
+  g.ellipse(S / 2, S / 2, S * 0.42, S * 0.36, 0, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = 'rgba(40,28,16,0.5)';
+  g.beginPath();
+  g.ellipse(S * 0.58, S / 2, S * 0.12, S * 0.2, 0, 0, Math.PI * 2);
+  g.fill();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}

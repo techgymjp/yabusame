@@ -165,8 +165,8 @@ export class ViewModel {
     lh.position.set(-0.012, 0.0, 0.01);
     this.bow.group.add(lh);
     // 弓手の腕（射籠手）：握りから肩の方へ伸びる
-    const koteMat = new THREE.MeshStandardMaterial({ color: 0x6e2a22, roughness: 0.7 });
-    const armGeo = new THREE.CylinderGeometry(0.03, 0.045, 0.7, 10);
+    const koteMat = new THREE.MeshStandardMaterial({ color: 0x4a2a2e, roughness: 0.75 });
+    const armGeo = new THREE.CylinderGeometry(0.022, 0.032, 0.7, 10);
     armGeo.translate(0, 0.35, 0);
     this.forearm = new THREE.Mesh(armGeo, koteMat);
     this.root.add(this.forearm);
@@ -201,7 +201,7 @@ export class ViewModel {
     this.arrow.position.z += (1 - nocked) * 0.35;
     this.arrow.position.y -= (1 - nocked) * 0.15;
     // 腕は握りから左肩（カメラ空間の左下手前）へ
-    _d.set(-0.22, -0.3, 0.1).sub(bg.position).normalize();
+    _d.set(-0.34, -0.28, 0.0).sub(bg.position).normalize();
     this.forearm.position.copy(bg.position).addScaledVector(_d, 0.03);
     this.forearm.quaternion.setFromUnitVectors(_up, _d);
     this.rightHand.position.copy(nock).add(new THREE.Vector3(0.03, -0.01, 0.03));

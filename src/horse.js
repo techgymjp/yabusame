@@ -1,7 +1,8 @@
 // 馬（襲歩の脚運び）と射手（狩装束・立透かし）
 import * as THREE from 'three';
 import { Bow, makeArrow, BOW } from './archery.js';
-import { robeTexture, furTexture } from './textures.js';
+import { robeTexture, furTexture, hairCardTexture } from './textures.js';
+import { loft } from './loft.js';
 
 const TAU = Math.PI * 2;
 const up = new THREE.Vector3(0, 1, 0);
@@ -24,180 +25,238 @@ function stretch(mesh, a, b) {
   mesh.scale.set(1, Math.max(len, 0.001), 1);
 }
 
+const BAY = 0x6a3a1e, BAY_DARK = 0x4a2814, POINTS = 0x1b1411, MUZZLE = 0x2a1d18, HOOF = 0x2b2624;
+
 export class Horse {
   constructor() {
     this.root = new THREE.Group();
     this.body = new THREE.Group();
     this.root.add(this.body);
-    this.baseY = 1.38;
+    this.baseY = 1.3;
     this.body.position.y = this.baseY;
-    const coat = new THREE.MeshStandardMaterial({ color: 0x5a3520, roughness: 0.5, metalness: 0.0 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x15100c, roughness: 0.8 });
-    const hoof = new THREE.MeshStandardMaterial({ color: 0x2a2420, roughness: 0.6 });
-    const red = new THREE.MeshStandardMaterial({ color: 0xa8161b, roughness: 0.75 });
-    const lacq = new THREE.MeshStandardMaterial({ color: 0x120c0a, roughness: 0.25, metalness: 0.1 });
-    const gold = new THREE.MeshStandardMaterial({ color: 0xc9a043, roughness: 0.35, metalness: 0.8 });
+    // 鹿毛：艶のある短毛（シーン）
+    const coat = new THREE.MeshPhysicalMaterial({
+      vertexColors: true, roughness: 0.42, metalness: 0,
+      sheen: 0.7, sheenRoughness: 0.45, sheenColor: new THREE.Color(0x9a6a48),
+      clearcoat: 0.12, clearcoatRoughness: 0.6,
+    });
+    const hairTex = hairCardTexture();
+    const hairMat = new THREE.MeshStandardMaterial({ map: hairTex, alphaTest: 0.3, side: THREE.DoubleSide, roughness: 0.8, color: 0x5a4a40 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x0c0907, roughness: 0.4 });
+    const red = new THREE.MeshStandardMaterial({ color: 0xa8161b, roughness: 0.7 });
+    const lacq = new THREE.MeshPhysicalMaterial({ color: 0x120c0a, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.1 });
+    const gold = new THREE.MeshStandardMaterial({ color: 0xc9a043, roughness: 0.3, metalness: 0.9 });
     const fur = new THREE.MeshStandardMaterial({ map: furTexture(), roughness: 0.95 });
     this.mats = { coat };
-
-    const sph = (r, mat, x, y, z, sx = 1, sy = 1, sz = 1) => {
-      const m = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), mat);
-      m.position.set(x, y, z);
-      m.scale.set(sx, sy, sz);
+    const add = (geo, mat, parent = this.body) => {
+      const m = new THREE.Mesh(geo, mat);
       m.castShadow = true;
       m.receiveShadow = true;
-      this.body.add(m);
+      parent.add(m);
       return m;
     };
-    sph(1, coat, 0, 0, 0, 1.0, 0.42, 0.36);
-    sph(0.42, coat, 0.72, 0.06, 0, 1, 1, 0.86);
-    sph(0.45, coat, -0.72, 0.1, 0, 1, 1, 0.9);
 
-    // 首と頭
+    // 胴（尻〜胸）
+    add(loft([
+      { s: -1.08, c: 0.15, a: 0.05, b: 0.05, color: BAY },
+      { s: -1.0, c: 0.11, a: 0.24, b: 0.19, color: BAY },
+      { s: -0.86, c: 0.06, a: 0.35, b: 0.27, color: BAY },
+      { s: -0.66, c: 0.04, a: 0.39, b: 0.3, color: BAY },
+      { s: -0.4, c: 0.02, a: 0.37, b: 0.29, color: BAY },
+      { s: -0.1, c: -0.01, a: 0.38, b: 0.31, color: BAY },
+      { s: 0.2, c: 0.02, a: 0.4, b: 0.31, color: BAY },
+      { s: 0.45, c: 0.05, a: 0.41, b: 0.28, color: BAY },
+      { s: 0.68, c: 0.05, a: 0.39, b: 0.25, color: BAY },
+      { s: 0.86, c: 0.01, a: 0.33, b: 0.21, color: BAY },
+      { s: 0.98, c: -0.03, a: 0.21, b: 0.15, color: BAY },
+      { s: 1.04, c: -0.05, a: 0.05, b: 0.05, color: BAY },
+    ], { axis: 'x', radial: 36, per: 6, nTop: 2.5, nBottom: 2.1 }).scale(0.82, 1, 1), coat);
+
+    // 首
     this.neck = new THREE.Group();
-    this.neck.position.set(0.92, 0.2, 0);
+    this.neck.position.set(0.66, 0.2, 0);
     this.neck.rotation.z = -0.72;
     this.body.add(this.neck);
-    const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.27, 0.95, 16), coat);
-    neckMesh.position.y = 0.42;
-    neckMesh.scale.z = 0.75;
-    neckMesh.castShadow = true;
-    this.neck.add(neckMesh);
-    const mane = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.9, 0.05), dark);
-    mane.position.set(-0.2, 0.45, 0);
-    mane.rotation.z = -0.1;
-    this.neck.add(mane);
+    add(loft([
+      { s: -0.2, c: 0.02, a: 0.2, b: 0.25, color: BAY },
+      { s: 0.05, c: 0.0, a: 0.18, b: 0.22, color: BAY },
+      { s: 0.35, c: -0.01, a: 0.14, b: 0.17, color: BAY },
+      { s: 0.62, c: -0.02, a: 0.105, b: 0.125, color: BAY },
+      { s: 0.84, c: -0.02, a: 0.095, b: 0.115, color: BAY },
+      { s: 0.98, c: -0.01, a: 0.085, b: 0.1, color: BAY },
+    ], { axis: 'y', radial: 24, per: 5, nTop: 2.2, nBottom: 2.2 }), coat, this.neck);
+    // たてがみ（鬣の付け根から右側へ垂れる毛の板）
+    const hang = new THREE.Vector3(0.35, 0, 1).normalize();
+    const mx = new THREE.Vector3(0, 1, 0), my = hang.clone().negate(), mz = new THREE.Vector3().crossVectors(mx, my);
+    const maneQ = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(mx, my, mz));
+    for (let i = 0; i < 18; i++) {
+      const t = i / 17;
+      const sy = -0.08 + t * 1.02;
+      const crest = 0.155 - t * 0.065;
+      const card = new THREE.Mesh(new THREE.PlaneGeometry(0.13, 0.22 + Math.random() * 0.08), hairMat);
+      card.geometry.translate(0, -card.geometry.parameters.height / 2, 0);
+      card.position.set(-crest + 0.01, sy, 0.01);
+      card.quaternion.copy(maneQ);
+      card.rotateX((Math.random() - 0.5) * 0.2);
+      this.neck.add(card);
+    }
+
+    // 頭
     this.head = new THREE.Group();
-    this.head.position.y = 0.88;
+    this.head.position.y = 0.92;
     this.head.rotation.z = -1.75;
     this.neck.add(this.head);
-    const headMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.13, 0.6, 14), coat);
-    headMesh.position.y = 0.28;
-    headMesh.scale.z = 0.72;
-    headMesh.castShadow = true;
-    this.head.add(headMesh);
-    const jaw = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), coat);
-    jaw.position.set(0, 0.04, 0);
-    jaw.scale.set(1.1, 1, 0.75);
-    this.head.add(jaw);
-    for (const s of [-1, 1]) {
-      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.13, 8), coat);
-      ear.position.set(-0.08, -0.02, s * 0.06);
-      ear.rotation.z = 1.9;
-      this.head.add(ear);
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), dark);
-      eye.position.set(0.04, 0.1, s * 0.085);
-      this.head.add(eye);
-      // 面繋（おもがい）
-      const strap = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.012, 6, 16), red);
-      strap.position.y = 0.42;
+    add(loft([
+      { s: -0.06, c: 0.02, a: 0.1, b: 0.09, color: BAY },
+      { s: 0.04, c: 0.035, a: 0.15, b: 0.115, color: BAY },
+      { s: 0.2, c: 0.015, a: 0.14, b: 0.11, color: BAY },
+      { s: 0.4, c: 0.0, a: 0.1, b: 0.095, color: BAY_DARK },
+      { s: 0.6, c: 0.0, a: 0.08, b: 0.08, color: BAY_DARK },
+      { s: 0.76, c: 0.004, a: 0.072, b: 0.074, color: MUZZLE },
+      { s: 0.88, c: 0.008, a: 0.078, b: 0.08, color: MUZZLE },
+      { s: 0.96, c: 0.004, a: 0.06, b: 0.066, color: MUZZLE },
+      { s: 0.99, c: 0.0, a: 0.03, b: 0.03, color: MUZZLE },
+    ], { axis: 'y', radial: 24, per: 5, nTop: 2.3, nBottom: 2.0 }).scale(1.05, 0.6, 1.05), coat, this.head);
+    for (const sd of [-1, 1]) {
+      const ear = add(new THREE.ConeGeometry(0.035, 0.14, 8), coat, this.head);
+      ear.geometry = ear.geometry.clone();
+      const ec = ear.geometry.attributes.position.count;
+      ear.geometry.setAttribute('color', new THREE.Float32BufferAttribute(new Array(ec).fill(0).flatMap(() => [0.2, 0.12, 0.08]), 3));
+      ear.position.set(-0.06, -0.06, sd * 0.055);
+      ear.rotation.z = 2.47;
+      ear.rotation.x = sd * -0.25;
+      const eye = add(new THREE.SphereGeometry(0.02, 10, 8), dark, this.head);
+      eye.position.set(-0.05, 0.11, sd * 0.105);
+      const nostril = add(new THREE.SphereGeometry(0.018, 8, 6), dark, this.head);
+      nostril.position.set(-0.035, 0.565, sd * 0.05);
+      nostril.scale.set(1, 1.6, 0.6);
+      // 面繋（赤い紐）
+      const strap = add(new THREE.TorusGeometry(0.1, 0.01, 6, 20), red, this.head);
+      strap.position.y = 0.38;
       strap.rotation.x = Math.PI / 2;
-      strap.scale.set(0.9, 0.7, 1);
-      this.head.add(strap);
+      strap.scale.set(0.85, 0.85, 1);
     }
-    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), coat);
-    nose.position.y = 0.56;
-    nose.scale.set(1, 0.8, 0.85);
-    this.head.add(nose);
+    const brow = add(new THREE.TorusGeometry(0.125, 0.012, 6, 20), red, this.head);
+    brow.position.y = 0.02;
+    brow.rotation.x = Math.PI / 2;
+    brow.scale.set(1.15, 0.9, 1);
+    // 前髪
+    const forelock = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.18), hairMat);
+    forelock.geometry.translate(0, 0.09, 0);
+    forelock.position.set(-0.11, 0.0, 0);
+    forelock.rotation.set(Math.PI / 2, 0, 0);
+    this.head.add(forelock);
 
-    // 尾
+    // 尾（毛の板の束）
     this.tail = new THREE.Group();
-    this.tail.position.set(-1.1, 0.25, 0);
+    this.tail.position.set(-0.87, 0.16, 0);
     this.body.add(this.tail);
-    const tailMesh = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.95, 10), dark);
-    tailMesh.position.y = -0.45;
-    tailMesh.rotation.z = Math.PI;
-    tailMesh.castShadow = true;
-    this.tail.add(tailMesh);
+    const dock = add(new THREE.CylinderGeometry(0.045, 0.06, 0.28, 8), dark, this.tail);
+    dock.position.y = -0.12;
+    for (let i = 0; i < 9; i++) {
+      const card = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.95), hairMat);
+      card.geometry.translate(0, -0.47, 0);
+      card.rotation.y = (i / 9) * Math.PI;
+      card.rotation.z = (Math.random() - 0.5) * 0.25;
+      card.scale.x = 0.8 + Math.random() * 0.6;
+      card.position.y = -0.05;
+      this.tail.add(card);
+    }
 
     // 脚：左後・右後・左前・右前（交叉襲歩の着地順）
     const legDefs = [
-      { x: -0.72, z: -0.2, off: 0.0, front: false },
-      { x: -0.72, z: 0.2, off: 0.11, front: false },
-      { x: 0.7, z: -0.19, off: 0.42, front: true },
-      { x: 0.7, z: 0.19, off: 0.53, front: true },
+      { x: -0.54, z: -0.17, off: 0.0, front: false },
+      { x: -0.54, z: 0.17, off: 0.11, front: false },
+      { x: 0.56, z: -0.16, off: 0.42, front: true },
+      { x: 0.56, z: 0.16, off: 0.53, front: true },
     ];
+    const upperFront = loft([
+      { s: 0.1, c: 0.0, a: 0.12, b: 0.1, color: BAY },
+      { s: -0.12, c: 0.0, a: 0.1, b: 0.085, color: BAY },
+      { s: -0.32, c: 0.005, a: 0.07, b: 0.066, color: BAY },
+      { s: -0.46, c: 0.0, a: 0.058, b: 0.06, color: BAY_DARK },
+      { s: -0.52, c: 0.0, a: 0.06, b: 0.06, color: POINTS },
+    ], { axis: 'y', radial: 16, per: 4 });
+    const upperHind = loft([
+      { s: 0.15, c: 0.0, a: 0.2, b: 0.13, color: BAY },
+      { s: -0.1, c: 0.02, a: 0.15, b: 0.1, color: BAY },
+      { s: -0.32, c: 0.03, a: 0.09, b: 0.07, color: BAY },
+      { s: -0.47, c: 0.04, a: 0.07, b: 0.055, color: BAY_DARK },
+      { s: -0.52, c: 0.05, a: 0.07, b: 0.055, color: POINTS },
+    ], { axis: 'y', radial: 16, per: 4 });
+    const lower = loft([
+      { s: 0.03, c: 0.0, a: 0.055, b: 0.055, color: POINTS },
+      { s: -0.08, c: 0.0, a: 0.04, b: 0.04, color: POINTS },
+      { s: -0.38, c: 0.0, a: 0.037, b: 0.032, color: POINTS },
+      { s: -0.47, c: 0.008, a: 0.052, b: 0.045, color: POINTS },
+      { s: -0.54, c: -0.01, a: 0.04, b: 0.038, color: POINTS },
+      { s: -0.6, c: -0.02, a: 0.048, b: 0.046, color: HOOF },
+      { s: -0.68, c: -0.03, a: 0.065, b: 0.058, color: HOOF },
+    ], { axis: 'y', radial: 14, per: 4, capEnd: true });
     this.legs = legDefs.map(d => {
       const upper = new THREE.Group();
-      upper.position.set(d.x, -0.12, d.z);
+      upper.position.set(d.x, -0.1, d.z);
       this.body.add(upper);
-      const um = new THREE.Mesh(new THREE.CylinderGeometry(d.front ? 0.085 : 0.11, 0.06, 0.6, 10), coat);
-      um.position.y = -0.3;
-      um.castShadow = true;
-      upper.add(um);
-      const lower = new THREE.Group();
-      lower.position.y = -0.6;
-      upper.add(lower);
-      const lm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.6, 8), coat);
-      lm.position.y = -0.3;
-      lm.castShadow = true;
-      lower.add(lm);
-      const fetlock = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), coat);
-      fetlock.position.y = -0.58;
-      lower.add(fetlock);
-      const h = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.08, 10), hoof);
-      h.position.y = -0.64;
-      h.castShadow = true;
-      lower.add(h);
-      return { ...d, upper, lower, lastQ: 0 };
+      add(d.front ? upperFront : upperHind, coat, upper);
+      const lowerG = new THREE.Group();
+      lowerG.position.y = -0.52;
+      upper.add(lowerG);
+      add(lower, coat, lowerG);
+      return { ...d, upper, lower: lowerG, lastQ: 0 };
     });
 
-    // 鞍・障泥（あおり）・鐙
-    const saddle = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.12, 0.5), lacq);
-    saddle.position.set(0.08, 0.42, 0);
-    saddle.castShadow = true;
-    this.body.add(saddle);
-    for (const x of [0.38, -0.22]) {
-      const pommel = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 8, 16, Math.PI), lacq);
-      pommel.position.set(x, 0.42, 0);
-      pommel.rotation.y = Math.PI / 2;
-      this.body.add(pommel);
-      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.012, 6, 16, Math.PI), gold);
-      rim.position.set(x + (x > 0 ? 0.03 : -0.03), 0.42, 0);
+    // 和鞍・障泥（あおり）・鐙
+    const saddle = add(loft([
+      { s: -0.22, c: 0.0, a: 0.05, b: 0.2 },
+      { s: 0.0, c: -0.02, a: 0.05, b: 0.26 },
+      { s: 0.25, c: 0.0, a: 0.05, b: 0.24 },
+    ], { axis: 'x', radial: 18, per: 3 }), lacq);
+    saddle.position.set(0.06, 0.4, 0);
+    for (const [x, h] of [[0.29, 0.17], [-0.14, 0.2]]) {
+      const arch = add(new THREE.TorusGeometry(0.2, 0.035, 8, 20, Math.PI), lacq);
+      arch.position.set(x, 0.38, 0);
+      arch.rotation.y = Math.PI / 2;
+      arch.scale.set(1.25, h / 0.2, 1);
+      const rim = add(new THREE.TorusGeometry(0.2, 0.01, 6, 20, Math.PI), gold);
+      rim.position.set(x + (x > 0 ? 0.035 : -0.035), 0.38, 0);
       rim.rotation.y = Math.PI / 2;
-      this.body.add(rim);
+      rim.scale.set(1.25, h / 0.2, 1);
     }
-    for (const s of [-1, 1]) {
-      const aori = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.55, 0.025), fur);
-      aori.position.set(0.05, 0.08, s * 0.39);
-      aori.rotation.x = s * -0.18;
-      aori.castShadow = true;
-      this.body.add(aori);
-      const abumi = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.12), lacq);
-      abumi.position.set(0.18, -0.48, s * 0.42);
-      this.body.add(abumi);
-      const strap = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.85, 0.02), dark);
-      strap.position.set(0.12, -0.05, s * 0.41);
-      this.body.add(strap);
+    for (const sd of [-1, 1]) {
+      const aori = add(new THREE.BoxGeometry(0.66, 0.56, 0.02), fur);
+      aori.position.set(0.06, 0.06, sd * 0.34);
+      aori.rotation.x = sd * -0.2;
+      const abumi = add(loft([
+        { s: -0.05, c: 0, a: 0.05, b: 0.06 }, { s: 0.15, c: 0.01, a: 0.04, b: 0.07 }, { s: 0.26, c: 0.03, a: 0.03, b: 0.06 },
+      ], { axis: 'x', radial: 12, per: 3 }), lacq);
+      abumi.position.set(0.12, -0.5, sd * 0.4);
+      const strap = add(new THREE.BoxGeometry(0.03, 0.8, 0.012), dark);
+      strap.position.set(0.12, -0.1, sd * 0.37);
+      strap.rotation.x = sd * -0.1;
     }
-    // 胸繋・鞦（赤い紐と房）
-    const chest = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.02, 6, 24, Math.PI), red);
-    chest.position.set(0.82, 0.05, 0);
-    chest.rotation.set(Math.PI / 2, 0, Math.PI / 2);
-    chest.rotation.order = 'YXZ';
-    chest.rotation.set(0, Math.PI / 2, 0);
-    chest.scale.set(0.9, 1.0, 1);
-    this.body.add(chest);
-    const rump = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.022, 6, 28, Math.PI), red);
-    rump.position.set(-0.75, 0.0, 0);
+    // 胸繋・鞦（赤い紐と厚総）
+    const chest = add(new THREE.TorusGeometry(1, 0.022 / 0.3, 6, 32, Math.PI), red);
+    chest.position.set(0.74, 0.0, 0);
+    chest.rotation.y = Math.PI / 2;
+    chest.rotation.z = Math.PI;
+    chest.scale.set(0.24, 0.3, 0.3);
+    const rump = add(new THREE.TorusGeometry(1, 0.022 / 0.4, 6, 32, Math.PI), red);
+    rump.position.set(-0.64, 0.04, 0);
     rump.rotation.y = Math.PI / 2;
-    rump.rotation.z = -0.3;
-    this.body.add(rump);
+    rump.scale.set(0.33, 0.41, 0.4);
     this.tassels = [];
-    for (let i = 0; i < 7; i++) {
-      const a = (i / 6) * Math.PI;
-      const t = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.06, 0.32, 8), red);
-      const px = -0.75 - Math.sin(-0.3) * 0;
-      t.position.set(px - 0.18, Math.sin(a) * 0.4 - 0.12, Math.cos(a) * 0.48);
-      t.castShadow = true;
-      this.body.add(t);
+    for (let i = 0; i < 9; i++) {
+      const a = 0.25 + (i / 8) * (Math.PI - 0.5);
+      const t = add(new THREE.CylinderGeometry(0.03, 0.065, 0.34, 10), red);
+      t.geometry.translate(0, -0.17, 0);
+      t.position.set(-0.66, 0.04 + Math.sin(a) * 0.4 - 0.05, Math.cos(a) * 0.35);
       this.tassels.push(t);
     }
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 3) * Math.PI;
-      const t = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 0.25, 8), red);
-      t.position.set(0.92, Math.sin(a) * 0.3 - 0.2, Math.cos(a) * 0.36);
-      this.body.add(t);
+    for (let i = 0; i < 5; i++) {
+      const a = 0.3 + (i / 4) * (Math.PI - 0.6);
+      const t = add(new THREE.CylinderGeometry(0.025, 0.05, 0.26, 10), red);
+      t.geometry.translate(0, -0.13, 0);
+      t.position.set(0.77, -Math.sin(a) * 0.28 + 0.02, Math.cos(a) * 0.24);
       this.tassels.push(t);
     }
 
@@ -205,7 +264,7 @@ export class Horse {
     this.amp = 0;
     this.bob = 0;
     this.saddleAnchor = new THREE.Group();
-    this.saddleAnchor.position.set(0.06, 0.48, 0);
+    this.saddleAnchor.position.set(0.06, 0.46, 0);
     this.body.add(this.saddleAnchor);
   }
 
@@ -246,9 +305,9 @@ export class Horse {
     this.body.position.y = this.baseY + this.bob + Math.sin(t * 1.3) * 0.004 * (1 - a);
     this.body.rotation.z = Math.sin(w + 0.6) * 0.07 * a;
     this.body.rotation.x = Math.sin(w * 0.5) * 0.015 * a;
-    this.neck.rotation.z = -0.72 - 0.12 * a + Math.sin(w + 2.2) * 0.13 * a + Math.sin(t * 0.5) * 0.03 * (1 - a);
+    this.neck.rotation.z = -0.78 - 0.1 * a + Math.sin(w + 2.2) * 0.13 * a + Math.sin(t * 0.5) * 0.03 * (1 - a);
     this.head.rotation.z = -1.75 + 0.2 * a + Math.sin(w + 2.6) * 0.08 * a;
-    this.tail.rotation.z = -0.35 - 0.8 * a + Math.sin(w * 2) * 0.12 * a;
+    this.tail.rotation.z = -0.3 - 0.45 * a + Math.sin(w * 2) * 0.12 * a;
     this.tail.rotation.x = Math.sin(t * 2.1) * 0.15;
     for (let i = 0; i < this.tassels.length; i++) {
       this.tassels[i].rotation.z = 0.3 * a + Math.sin(w + i) * 0.25 * a;
@@ -282,23 +341,45 @@ export class Rider {
     }
     this.hips = new THREE.Group();
     this.root.add(this.hips);
-    const hipMesh = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 10), robe2);
-    hipMesh.scale.set(1, 0.8, 1.15);
+    // 袴（腰回り）
+    const hipMesh = new THREE.Mesh(loft([
+      { s: -0.2, c: 0.0, a: 0.17, b: 0.24 },
+      { s: -0.05, c: 0.0, a: 0.15, b: 0.22 },
+      { s: 0.08, c: 0.0, a: 0.12, b: 0.18 },
+    ], { axis: 'y', radial: 20, per: 3 }), robe2);
     hipMesh.castShadow = true;
     this.hips.add(hipMesh);
 
     this.torso = new THREE.Group();
     this.torso.position.y = 0.06;
     this.hips.add(this.torso);
-    const chest = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.2, 0.55, 14), robe);
-    chest.position.y = 0.3;
-    chest.scale.z = 1.15;
+    // 直垂の胴（胸板が厚く、肩が張った断面）
+    const chest = new THREE.Mesh(loft([
+      { s: 0.0, c: 0.0, a: 0.13, b: 0.19 },
+      { s: 0.2, c: 0.01, a: 0.14, b: 0.2 },
+      { s: 0.42, c: 0.02, a: 0.15, b: 0.23 },
+      { s: 0.56, c: 0.0, a: 0.13, b: 0.26 },
+      { s: 0.63, c: -0.01, a: 0.08, b: 0.16 },
+      { s: 0.66, c: 0.0, a: 0.04, b: 0.06 },
+    ], { axis: 'y', radial: 22, per: 4, nTop: 2.6, nBottom: 2.6 }), robe);
     chest.castShadow = true;
     this.torso.add(chest);
-    const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 8, 0, TAU, 0, Math.PI / 2), robe);
-    shoulders.position.y = 0.56;
-    shoulders.scale.set(1, 0.4, 1.2);
+    const shoulders = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.025, 6, 18), robe2);
+    shoulders.rotation.x = Math.PI / 2;
+    shoulders.position.y = 0.62;
     this.torso.add(shoulders);
+    // 大きな袖
+    const sleeveMat = new THREE.MeshStandardMaterial({ map: robe.map, roughness: 0.85, side: THREE.DoubleSide });
+    this.sleeves = [0, 1].map(() => {
+      const g = new THREE.PlaneGeometry(1, 1, 4, 4);
+      const pa = g.attributes.position;
+      for (let i = 0; i < pa.count; i++) pa.setZ(i, Math.sin((pa.getX(i) + 0.5) * Math.PI) * 0.06 * (0.5 - pa.getY(i)));
+      g.computeVertexNormals();
+      const m = new THREE.Mesh(g, sleeveMat);
+      m.castShadow = true;
+      this.torso.add(m);
+      return m;
+    });
     // 箙（えびら）と矢
     this.quiver = new THREE.Group();
     this.quiver.position.set(-0.22, 0.05, 0.2);
@@ -352,7 +433,7 @@ export class Rider {
       this.torso.add(a.up, a.fo, a.hand);
       a.hand.castShadow = true;
     }
-    this.armParts = [this.armL.up, this.armL.fo, this.armL.hand, this.armR.up, this.armR.fo, this.armR.hand];
+    this.armParts = [this.armL.up, this.armL.fo, this.armL.hand, this.armR.up, this.armR.fo, this.armR.hand, ...this.sleeves];
 
     // 三人称用の弓と矢（ワールド直下に配置）
     this.bow = new Bow();
@@ -427,7 +508,7 @@ export class Rider {
     this.arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), aimDir);
 
     const inv = new THREE.Matrix4().copy(this.torso.matrixWorld).invert();
-    const setArm = (arm, shoulderLocal, handWorld, out) => {
+    const setArm = (arm, shoulderLocal, handWorld, out, sleeve) => {
       const hand = handWorld.clone().applyMatrix4(inv);
       const sh = shoulderLocal;
       const mid = sh.clone().lerp(hand, 0.5);
@@ -436,8 +517,15 @@ export class Rider {
       stretch(arm.up, sh, mid);
       stretch(arm.fo, mid, hand);
       arm.hand.position.copy(hand);
+      // 袖は上腕から下へ垂れる
+      const ax = mid.clone().sub(sh).normalize();
+      const dn = new THREE.Vector3(0, -1, 0).addScaledVector(ax, ax.y).normalize();
+      const zz = new THREE.Vector3().crossVectors(ax, dn.clone().negate()).normalize();
+      sleeve.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(ax, dn.clone().negate(), zz));
+      sleeve.position.copy(sh).lerp(mid, 0.6).addScaledVector(dn, 0.15);
+      sleeve.scale.set(0.34, 0.32, 1);
     };
-    setArm(this.armL, new THREE.Vector3(0, 0.56, -0.22), hl, -1);
-    setArm(this.armR, new THREE.Vector3(0, 0.56, 0.22), hr, 1);
+    setArm(this.armL, new THREE.Vector3(0, 0.56, -0.22), hl, -1, this.sleeves[0]);
+    setArm(this.armR, new THREE.Vector3(0, 0.56, 0.22), hr, 1, this.sleeves[1]);
   }
 }

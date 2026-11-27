@@ -5,7 +5,9 @@ import {
   ViewModel, FlyingArrow, integrateArrow, segmentHitsBoard, shatterBoard, updatePieces, ARROW_PHYS, BOW,
 } from './archery.js';
 import { Sound } from './audio.js';
-import { puffTexture } from './textures.js';
+import { puffTexture, hoofPrintTexture } from './textures.js';
+import { createPost, QUALITY } from './post.js';
+import { windUniforms } from './vegetation.js';
 
 const DIFF = {
   easy: {
@@ -28,6 +30,9 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* 保存不可でも続行 */ } },
 };
 
+const isTouch = matchMedia('(pointer: coarse)').matches;
+const quality = (() => { const q = store.get('yabusame.quality'); return QUALITY[q] ? q : (isTouch ? 'low' : 'high'); })();
+
 // ---------- レンダラ ----------
 const canvas = $('game');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -36,14 +41,38 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.62;
+renderer.toneMappingExposure = 0.6;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.03, 5000);
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.05, 5000);
 scene.add(camera);
 
-const world = buildWorld(scene, renderer);
+const world = buildWorld(scene, renderer, quality);
+world.sun.shadow.mapSize.set(QUALITY[quality].shadow, QUALITY[quality].shadow);
+const post = createPost(renderer, scene, camera, quality);
+post.setSize(window.innerWidth, window.innerHeight);
+
+// 蹄跡（砂に残る）
+const PRINTS = 700;
+const prints = new THREE.InstancedMesh(
+  new THREE.PlaneGeometry(0.2, 0.18).rotateX(-Math.PI / 2),
+  new THREE.MeshStandardMaterial({ map: hoofPrintTexture(), transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -12 }),
+  PRINTS);
+prints.count = 0;
+prints.receiveShadow = true;
+prints.frustumCulled = false;
+scene.add(prints);
+let printIdx = 0;
+const printM = new THREE.Matrix4(), printQ = new THREE.Quaternion();
+function addPrint(x, z) {
+  printQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), (Math.random() - 0.5) * 0.4);
+  printM.compose(new THREE.Vector3(x, 0.016, z), printQ, new THREE.Vector3(1, 1, 1));
+  prints.setMatrixAt(printIdx % PRINTS, printM);
+  printIdx++;
+  prints.count = Math.min(PRINTS, printIdx);
+  prints.instanceMatrix.needsUpdate = true;
+}
 const horse = new Horse();
 scene.add(horse.root);
 horse.root.traverse(o => { if (o.isMesh) { o.castShadow = true; } });
@@ -145,6 +174,14 @@ function setDiff(k) {
   $('best').textContent = best ? `最高記録（${{ easy: '初級', normal: '中級', hard: '本式' }[k]}）: ${best} 点` : '';
 }
 document.querySelectorAll('#difficulty button').forEach(b => b.addEventListener('click', () => setDiff(b.dataset.v)));
+document.querySelectorAll('#quality button').forEach(b => {
+  b.classList.toggle('on', b.dataset.v === quality);
+  b.addEventListener('click', () => {
+    if (b.dataset.v === quality) return;
+    store.set('yabusame.quality', b.dataset.v);
+    location.reload();
+  });
+});
 $('sens').value = G.sens;
 $('sens').addEventListener('input', e => { G.sens = +e.target.value; store.set('yabusame.sens', G.sens); });
 
@@ -159,8 +196,6 @@ function message(html, ms = 1600, cls = '') {
   msgTimeout = setTimeout(() => (m.className = cls), ms);
 }
 function hint(text) { $('hint').textContent = text || ''; }
-
-const isTouch = matchMedia('(pointer: coarse)').matches;
 
 // ---------- 入力 ----------
 function lockPointer() {
@@ -512,6 +547,7 @@ function update(dt, rdt) {
     const vol = Math.min(1, G.speed / 12) * (L.front ? 1 : 0.8);
     sound.hoof(vol, L.z > 0 ? 0.3 : -0.3);
     const p = new THREE.Vector3(G.x + L.x - 0.2, 0.08, G.z + L.z);
+    if (G.speed > 1) addPrint(p.x + 0.25, p.z);
     for (let i = 0; i < 2; i++) {
       spawnDust(p, new THREE.Vector3(-G.speed * 0.15 + (Math.random() - 0.5), 0.6 + Math.random() * 0.8, (Math.random() - 0.5) * 1.2),
         0.5 + Math.random() * 0.4, 1.2 + Math.random() * 0.8);
@@ -560,7 +596,7 @@ function update(dt, rdt) {
   if (G.fp) {
     camera.position.copy(rider.eye);
     camera.rotation.set(pitch, -Math.PI / 2 + yaw, roll, 'YXZ');
-    camera.fov = THREE.MathUtils.lerp(72, 62, G.raise * G.draw);
+    camera.fov = THREE.MathUtils.lerp(70 + G.speed * 0.25, 62, G.raise * G.draw);
   } else {
     const right = tmpV.crossVectors(G.aimDir, up).normalize();
     camera.position.copy(rider.eye).addScaledVector(G.aimDir, -2.6).addScaledVector(up, 0.55).addScaledVector(right, 0.5);
@@ -706,13 +742,18 @@ function frame(now) {
   s.target.position.set(G.x + 10, 0, G.z);
   s.target.updateMatrixWorld();
 
-  renderer.render(scene, camera);
+  windUniforms.uTime.value += dt;
+  windUniforms.uWind.value.set(0.5 + G.wind.x * 0.25, 0.2 + G.wind.z * 0.25);
+  if (world.clouds) world.clouds.material.uniforms.uTime.value += dt;
+  const blur = ['run', 'finish'].includes(G.state) && G.fp ? THREE.MathUtils.clamp((G.speed - 6) / 10, 0, 1) : 0;
+  post.render(rdt, blur, G.clock);
 }
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  post.setSize(window.innerWidth, window.innerHeight);
 });
 
 // 起動

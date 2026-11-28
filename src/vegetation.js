@@ -106,7 +106,7 @@ function chunked(scene, geo, mat, items, chunk, build, opts = {}) {
 }
 
 export function buildGrass(scene, quality) {
-  const density = { high: 1, medium: 0.45, low: 0.12 }[quality];
+  const density = { high: 1, medium: 0.45, low: 0.05 }[quality];
   const bands = [
     // [zMin, zMax, 本/m², xMin, xMax]
     [-8.2, -1.95, 42, -75, 335],
@@ -246,7 +246,7 @@ export function buildForest(scene, quality) {
   const place = (zMin, zMax, xMin, xMax, count) => {
     for (let i = 0; i < count; i++) cedars.push({ x: rnd(xMin, xMax), z: rnd(zMin, zMax), s: rnd(0.8, 1.25) });
   };
-  const mult = quality === 'low' ? 0.5 : 1;
+  const mult = quality === 'low' ? 0.33 : 1;
   place(-80, -21, -170, 430, 560 * mult);
   place(21, 80, -170, 430, 560 * mult);
   place(-21, 21, -180, -78, 90 * mult);
@@ -264,7 +264,7 @@ export function buildForest(scene, quality) {
     const H = 28 * t.s;
     m4.compose(new THREE.Vector3(t.x, 0, t.z), q, new THREE.Vector3(t.s, H * 0.97, t.s));
     trunks.setMatrixAt(i, m4);
-    const n = quality === 'low' ? 12 : 22;
+    const n = quality === 'low' ? 8 : 22;
     const hue = rnd(0.25, 0.33);
     for (let k = 0; k < n; k++) {
       const f = k / n;
@@ -289,7 +289,7 @@ export function buildForest(scene, quality) {
 
   // 紅葉・銀杏
   const maples = [];
-  for (let i = 0; i < 110; i++) {
+  for (let i = 0; i < (quality === 'low' ? 55 : 110); i++) {
     const side = Math.random() < 0.5 ? -1 : 1;
     const x = rnd(-62, 332);
     const z = side * rnd(17, 23);
@@ -323,7 +323,7 @@ export function buildForest(scene, quality) {
 
   // 林縁の低木
   const shrubs = [];
-  for (let i = 0; i < (quality === 'low' ? 250 : 600); i++) {
+  for (let i = 0; i < (quality === 'low' ? 100 : 600); i++) {
     const side = Math.random() < 0.5 ? -1 : 1;
     shrubs.push({ x: rnd(-75, 340), z: side * rnd(19, 26), size: rnd(1.2, 2.4) });
   }

@@ -38,11 +38,12 @@ const quality = (() => { const q = store.get('yabusame.quality'); return QUALITY
 
 // ---------- レンダラ ----------
 const canvas = $('game');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const LOW = quality === 'low';
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !LOW, powerPreference: 'high-performance' });
+renderer.setPixelRatio(LOW ? Math.min(window.devicePixelRatio, 1) : Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = LOW ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.6;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -53,6 +54,8 @@ scene.add(camera);
 
 const world = buildWorld(scene, renderer, quality);
 world.sun.shadow.mapSize.set(QUALITY[quality].shadow, QUALITY[quality].shadow);
+// 低画質では、影を落とすのは人馬と矢だけにする（木・観客・草の影は描かない）
+if (LOW) scene.traverse(o => { o.castShadow = false; });
 const post = createPost(renderer, scene, camera, quality);
 post.setSize(window.innerWidth, window.innerHeight);
 
@@ -83,7 +86,7 @@ const rider = new Rider(horse);
 rider.attachProps(scene);
 const vm = new ViewModel(camera);
 const sound = new Sound();
-const fx = new HitFX(scene);
+const fx = new HitFX(scene, { light: !LOW });
 const music = new Music(sound);
 
 // 砂埃
@@ -1074,7 +1077,7 @@ function frame(now) {
   fx.update(dt, G.clock);
   updatePops(rdt);
   updateCrowd(world.crowd, dt, G.clock);
-  updateFlags(world.flags, G.clock, G.wind.lengthSq() > 0 ? G.wind : new THREE.Vector3(1, 0, 0.5));
+  if (!LOW || (frameN & 3) === 0) updateFlags(world.flags, G.clock, G.wind.lengthSq() > 0 ? G.wind : new THREE.Vector3(1, 0, 0.5), LOW);
 
   const s = world.sun;
   s.position.set(G.x + 10, 0, G.z).addScaledVector(world.sunDir, 90);
@@ -1086,6 +1089,24 @@ function frame(now) {
   if (world.clouds) world.clouds.material.uniforms.uTime.value += dt;
   const blur = ['run', 'finish'].includes(G.state) && G.fp ? THREE.MathUtils.clamp((G.speed - 6) / 10, 0, 1) : 0;
   post.render(rdt, blur, G.clock);
+  if (LOW) adaptResolution(rdt);
+}
+
+// 低画質：重いときは描画の解像度を自動で下げ、余裕があれば戻す
+let frameAcc = 0, frameN = 0, renderScale = 1;
+function adaptResolution(rdt) {
+  frameAcc += rdt; frameN++;
+  if (frameAcc < 1.5) return;
+  const avg = frameAcc / frameN;
+  frameAcc = 0; frameN = 0;
+  const base = Math.min(window.devicePixelRatio, 1);
+  let next = renderScale;
+  if (avg > 1 / 40) next = Math.max(0.55, renderScale - 0.12);
+  else if (avg < 1 / 56) next = Math.min(1, renderScale + 0.08);
+  if (Math.abs(next - renderScale) > 0.01) {
+    renderScale = next;
+    renderer.setPixelRatio(base * renderScale);
+  }
 }
 
 window.addEventListener('resize', () => {

@@ -52,6 +52,10 @@ export const QUALITY = {
 
 export function createPost(renderer, scene, camera, quality) {
   const q = QUALITY[quality];
+  if (quality === 'low') {
+    // スマホ向け：全画面の後処理をすべて省き、そのまま描画する（解像度は main.js が自動調整）
+    return { composer: null, pulse() {}, setSize() {}, render() { renderer.render(scene, camera); } };
+  }
   const size = renderer.getSize(new THREE.Vector2());
   const pr = Math.min(window.devicePixelRatio, q.pixelRatio);
   renderer.setPixelRatio(pr);

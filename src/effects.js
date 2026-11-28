@@ -54,7 +54,7 @@ function glowTexture() {
 const MAX_LEAVES = 600, MAX_CHIPS = 400;
 
 export class HitFX {
-  constructor(scene) {
+  constructor(scene, { light = true } = {}) {
     this.scene = scene;
     // 紅葉吹雪
     const lg = new THREE.PlaneGeometry(0.11, 0.11);
@@ -78,8 +78,9 @@ export class HitFX {
     // 閃光と衝撃波
     this.glowTex = glowTexture();
     this.flashes = [];
+    // 閃光の点光源（低画質では全体の描画が重くなるので使わない）
     this.light = new THREE.PointLight(0xffe2b0, 0, 14, 1.5);
-    scene.add(this.light);
+    if (light) scene.add(this.light);
     this.m4 = new THREE.Matrix4();
     this.q = new THREE.Quaternion();
     this.e = new THREE.Euler();

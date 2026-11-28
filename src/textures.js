@@ -329,8 +329,7 @@ function heightToNormal(h, w, hh, strength) {
 }
 
 // 地表（草地の下地・砂・土）の PBR セット
-export function groundSet(kind, repeat) {
-  const S = 512;
+export function groundSet(kind, repeat, S = 512) {
   const noise = makeNoise(64, kind === 'sand' ? 3 : kind === 'path' ? 7 : 5);
   const noise2 = makeNoise(128, 11);
   const h = new Float32Array(S * S);

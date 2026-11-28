@@ -341,7 +341,8 @@ function buildHorseGeometry(h) {
 export class Horse {
   constructor(quality = 'high') {
     this.root = new THREE.Group();
-    const res = { high: 0.0125, medium: 0.015, low: 0.019 }[quality] || 0.014;
+    const res = { high: 0.0125, medium: 0.015, low: 0.023 }[quality] || 0.014;
+    const low = quality === 'low';
     const geo = buildHorseGeometry(res);
 
     // 骨
@@ -358,11 +359,12 @@ export class Horse {
       this.bones[name] = b;
     }
     const boneList = BONES.map(b => this.bones[b[0]]);
-    const coat = new THREE.MeshPhysicalMaterial({
-      vertexColors: true, roughness: 0.48, metalness: 0,
-      sheen: 0.8, sheenRoughness: 0.4, sheenColor: new THREE.Color(0xa0704c),
-      clearcoat: 0.18, clearcoatRoughness: 0.55,
-    });
+    const coat = low ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0 })
+      : new THREE.MeshPhysicalMaterial({
+        vertexColors: true, roughness: 0.48, metalness: 0,
+        sheen: 0.8, sheenRoughness: 0.4, sheenColor: new THREE.Color(0xa0704c),
+        clearcoat: 0.18, clearcoatRoughness: 0.55,
+      });
     this.mesh = new THREE.SkinnedMesh(geo, coat);
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;

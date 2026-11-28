@@ -72,7 +72,7 @@ export function buildWorld(scene, renderer, quality = 'high') {
   // ---------- 地面 ----------
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(3000, 3000),
-    (() => { const t = TX.groundSet('grass', [600, 600]); return new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 1 }); })()
+    (() => { const t = TX.groundSet('grass', [600, 600], quality === 'low' ? 256 : 512); return new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 1 }); })()
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
@@ -81,7 +81,7 @@ export function buildWorld(scene, renderer, quality = 'high') {
   const trackLen = COURSE.stop - COURSE.runup + 40;
   const track = new THREE.Mesh(
     new THREE.PlaneGeometry(trackLen, 3.6),
-    (() => { const t = TX.groundSet('sand', [trackLen / 4, 1]); return new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }); })()
+    (() => { const t = TX.groundSet('sand', [trackLen / 4, 1], quality === 'low' ? 256 : 512); return new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }); })()
   );
   track.rotation.x = -Math.PI / 2;
   track.position.set((COURSE.runup + COURSE.stop) / 2, 0.012, 0);
@@ -89,7 +89,7 @@ export function buildWorld(scene, renderer, quality = 'high') {
   scene.add(track);
 
   // 観客側の踏み固められた地面
-  const pt = TX.groundSet('path', [trackLen / 6, 1]);
+  const pt = TX.groundSet('path', [trackLen / 6, 1], quality === 'low' ? 256 : 512);
   const pathMat = new THREE.MeshStandardMaterial({ map: pt.map, normalMap: pt.normalMap, roughness: 1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
   for (const z of [-11, 7.5]) {
     const p = new THREE.Mesh(new THREE.PlaneGeometry(trackLen, z < 0 ? 5 : 6), pathMat);
@@ -184,7 +184,7 @@ export function buildWorld(scene, renderer, quality = 'high') {
   scene.add(makeTorii(COURSE.runup + 12));
 
   // ---------- 観客 ----------
-  world.crowd = makeCrowd(scene);
+  world.crowd = makeCrowd(scene, quality === 'low' ? 0.5 : 1);
 
   // ---------- 紅白幕・桟敷 ----------
   const curtainTex = TX.curtainTexture();
@@ -230,7 +230,7 @@ export function buildWorld(scene, renderer, quality = 'high') {
   scene.add(makeMountains());
 
   // ---------- 雲 ----------
-  world.clouds = makeClouds(sunDir);
+  world.clouds = makeClouds(sunDir, quality === 'low' ? 3 : 6);
   scene.add(world.clouds);
 
   return world;
@@ -330,7 +330,7 @@ function makeFlag(text, bg) {
   return { root, banner, base, phase: Math.random() * 10 };
 }
 
-export function updateFlags(flags, t, wind) {
+export function updateFlags(flags, t, wind, light = false) {
   const windAngle = Math.atan2(-wind.z, wind.x);
   const strength = Math.min(1, wind.length() / 4);
   for (const f of flags) {
@@ -342,7 +342,7 @@ export function updateFlags(flags, t, wind) {
       pos.setZ(i, w);
     }
     pos.needsUpdate = true;
-    f.banner.geometry.computeVertexNormals();
+    if (!light) f.banner.geometry.computeVertexNormals();
   }
 }
 
@@ -380,12 +380,12 @@ function personBodyGeometry() {
   return merge([body, ...arms]);
 }
 
-function makeCrowd(scene) {
+function makeCrowd(scene, keep = 1) {
   const people = [];
   const addRow = (zMin, zMax, density, xMin, xMax) => {
     for (let x = xMin; x < xMax; x += 0.55) {
       for (let z = zMin; z < zMax; z += 0.6) {
-        if (Math.random() > density) continue;
+        if (Math.random() > density * keep) continue;
         people.push({ x: x + rnd(-0.2, 0.2), z: z + rnd(-0.2, 0.2) });
       }
     }
@@ -560,7 +560,7 @@ function makeMountains() {
   return m;
 }
 
-function makeClouds(sunDir) {
+function makeClouds(sunDir, octaves = 6) {
   const mat = new THREE.ShaderMaterial({
     uniforms: { uTime: { value: 0 }, uSun: { value: sunDir.clone() } },
     vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
@@ -569,7 +569,7 @@ function makeClouds(sunDir) {
       float h(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float n(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
         return mix(mix(h(i),h(i+vec2(1,0)),f.x), mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x), f.y); }
-      float fbm(vec2 p){ float v=0., a=.5; for(int i=0;i<6;i++){ v+=a*n(p); p=p*2.03+vec2(1.7,9.2); a*=.5; } return v; }
+      float fbm(vec2 p){ float v=0., a=.5; for(int i=0;i<${octaves};i++){ v+=a*n(p); p=p*2.03+vec2(1.7,9.2); a*=.5; } return v; }
       void main(){
         if (vDir.y < 0.01) discard;
         vec2 uv = vDir.xz / (vDir.y + 0.12) * 1.4 + vec2(uTime * 0.004, uTime * 0.0015);

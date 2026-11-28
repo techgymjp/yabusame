@@ -87,7 +87,7 @@ kbd {
 }
 .targets .t.hit { background: rgba(192, 57, 43, 0.85); border-color: #f5d0c8; }
 .targets .t.miss { background: rgba(40, 40, 40, 0.6); color: #aaa; }
-#progress { position: absolute; top: 56px; left: 16px; width: min(320px, calc(100% - 32px)); height: 18px; }
+#progress { position: relative; flex: 0 0 100%; max-width: 320px; height: 18px; }
 #progress-track { position: absolute; left: 0; right: 0; top: 8px; height: 2px; background: rgba(255,255,255,0.5); }
 #progress-track span { position: absolute; top: -5px; width: 2px; height: 12px; background: #fff; }
 #progress-track span.tg { background: var(--vermilion); width: 6px; margin-left: -2px; }
@@ -218,4 +218,35 @@ button.big.small { font-size: 18px; padding: 8px 24px 8px 30px; }
   #help .controls { display: grid !important; font-size: 12px; margin: 2px auto 6px; }
   body.touch #controls-pc, body:not(.touch) #controls-touch { display: none !important; }
   .foot { margin-top: 4px; }
+}
+
+/* 縦画面のスマホでは横向きを案内する（プレイ中のみ） */
+#rotate { display: none; }
+@media (orientation: portrait) and (pointer: coarse) {
+  body[data-state="ready"] #rotate, body[data-state="run"] #rotate, body[data-state="finish"] #rotate,
+  body[data-state="paused"] #rotate, body[data-state="retry"] #rotate {
+    display: flex; position: fixed; inset: 0; z-index: 30; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; background: rgba(20, 14, 10, 0.92); color: #f3ecdc; font-size: 20px; text-align: center; padding: 24px;
+  }
+  .rot-icon { font-size: 56px; animation: rot 1.6s ease-in-out infinite; }
+}
+@keyframes rot { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+/* 高さがとても小さい画面：タイトルの「馬場入り」が最初から見えるように詰める */
+@media (max-height: 420px) {
+  .screen { padding: 8px; padding-bottom: calc(8px + var(--banner-h, 0px)); }
+  .panel { padding: 8px 14px; }
+  h1 { font-size: 40px; }
+  .sub { display: none; }
+  #title .intro { font-size: 13px; margin-bottom: 4px; }
+  .diffnote { display: none; }
+  .best { margin: 2px 0 0; }
+  button.big { margin: 6px 4px 2px; }
+  button.ghost { margin: 2px 4px; padding: 5px 14px; }
+  .foot { margin-top: 2px; }
+}
+/* 縦長の小さい画面ではタイトルの文字を控えめに */
+@media (max-width: 420px) {
+  h1 { font-size: 52px; }
+  .intro { font-size: 14px; }
+  .seg button { padding: 6px 11px; font-size: 14px; }
 }

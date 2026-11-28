@@ -501,14 +501,14 @@ function makeTrail() {
   return { mesh, pts: [], fade: 1 };
 }
 const _tA = new THREE.Vector3(), _tB = new THREE.Vector3();
-function updateTrail(tr, tip, alive, dt) {
-  if (alive) { tr.pts.unshift(tip.clone()); if (tr.pts.length > TRAIL_N) tr.pts.pop(); }
-  else tr.fade -= dt * 1.6;
-  const n = tr.pts.length;
-  const pos = tr.mesh.geometry.attributes.position, col = tr.mesh.geometry.attributes.color;
+function updateTrail(trail, tip, alive, dt) {
+  if (alive) { trail.pts.unshift(tip.clone()); if (trail.pts.length > TRAIL_N) trail.pts.pop(); }
+  else trail.fade -= dt * 1.6;
+  const n = trail.pts.length;
+  const pos = trail.mesh.geometry.attributes.position, col = trail.mesh.geometry.attributes.color;
   for (let i = 0; i < n; i++) {
-    const p = tr.pts[i];
-    const q = tr.pts[Math.min(n - 1, i + 1)], o = tr.pts[Math.max(0, i - 1)];
+    const p = trail.pts[i];
+    const q = trail.pts[Math.min(n - 1, i + 1)], o = trail.pts[Math.max(0, i - 1)];
     _tA.subVectors(o, q);
     _tB.subVectors(camera.position, p);
     _tA.cross(_tB).normalize();
@@ -517,14 +517,14 @@ function updateTrail(tr, tip, alive, dt) {
     const near = THREE.MathUtils.smoothstep(p.distanceTo(camera.position), 0.8, 3.5); // 目の前では消す
     pos.setXYZ(i * 2, p.x + _tA.x * w, p.y + _tA.y * w, p.z + _tA.z * w);
     pos.setXYZ(i * 2 + 1, p.x - _tA.x * w, p.y - _tA.y * w, p.z - _tA.z * w);
-    const a = f * f * 0.75 * near * Math.max(0, tr.fade);
+    const a = f * f * 0.75 * near * Math.max(0, trail.fade);
     col.setXYZW(i * 2, 1, 0.97, 0.88, a);
     col.setXYZW(i * 2 + 1, 1, 0.97, 0.88, a);
   }
   pos.needsUpdate = true;
   col.needsUpdate = true;
-  tr.mesh.geometry.setDrawRange(0, Math.max(0, n - 1) * 6);
-  if (tr.fade <= 0) { scene.remove(tr.mesh); tr.mesh.geometry.dispose(); return false; }
+  trail.mesh.geometry.setDrawRange(0, Math.max(0, n - 1) * 6);
+  if (trail.fade <= 0) { scene.remove(trail.mesh); trail.mesh.geometry.dispose(); return false; }
   return true;
 }
 
@@ -824,9 +824,9 @@ function update(dt, rdt) {
   // 視点と揺れ（騎乗の上下動は狙いに直結する）
   const w = Math.PI * 2 * horse.phase;
   const S = d.sway * Math.min(1.4, G.speed / 14) * horse.amp;
-  const tr = G.holdTremble;
-  const sp = S * 0.011 * Math.sin(w + 0.4) + tr * 0.006 * Math.sin(t * 37) + Math.sin(t * 1.1) * 0.002;
-  const sy = S * 0.007 * Math.sin(w * 0.5 + 1.2) + tr * 0.006 * Math.sin(t * 29 + 1);
+  const trm = G.holdTremble; // 満を持し過ぎたときの手の震え（tr は翻訳関数なので別名にする）
+  const sp = S * 0.011 * Math.sin(w + 0.4) + trm * 0.006 * Math.sin(t * 37) + Math.sin(t * 1.1) * 0.002;
+  const sy = S * 0.007 * Math.sin(w * 0.5 + 1.2) + trm * 0.006 * Math.sin(t * 29 + 1);
   const roll = S * 0.014 * Math.sin(w + 1.7);
   const yaw = G.yaw + sy, pitch = G.pitch + sp;
   G.aimDir.set(Math.cos(pitch) * Math.cos(yaw), Math.sin(pitch), -Math.cos(pitch) * Math.sin(yaw));
@@ -881,7 +881,7 @@ function update(dt, rdt) {
   }
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
-  const trem = { x: tr * 0.004 * Math.sin(t * 41), y: tr * 0.004 * Math.sin(t * 33) };
+  const trem = { x: trm * 0.004 * Math.sin(t * 41), y: trm * 0.004 * Math.sin(t * 33) };
   vm.update(G.raise + G.draw, G.nocked, trem, G.releaseT, G.arrowsLeft);
 
   updateArrows(dt);
@@ -1049,6 +1049,7 @@ function frame(now) {
   G.timeScale += (targetScale - G.timeScale) * Math.min(1, rdt * (targetScale < 1 ? 20 : 4));
   const dt = rdt * G.timeScale;
 
+  if (document.body.dataset.state !== G.state) document.body.dataset.state = G.state; // 画面ごとの表示切替（CSS）
   if (G.state === 'retry') {
     // 射直しの案内は数秒で自動的に消して先へ進める
     G.retryTimer -= rdt;

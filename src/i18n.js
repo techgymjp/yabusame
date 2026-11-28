@@ -3,6 +3,7 @@ const DICT = {
   ja: {
     pageTitle: '流鏑馬 — YABUSAME',
     tagline: '疾走する馬上から、三つの的を射抜け。',
+    rotate: '横画面にしてお楽しみください',
     howto: 'あそびかた・設定', howtoTitle: 'あそびかた',
     privacy: 'プライバシーポリシー', privacyUrl: 'https://techgym.jp/privacy-policy/', adSettings: '広告の設定',
     tAim: '画面をなぞって狙う', tDraw: '「引く」を長押しで打起し→引分け→会、離して放つ', tCam: '「視点」で視点を切り替え',
@@ -46,6 +47,7 @@ const DICT = {
   en: {
     pageTitle: 'YABUSAME — Horseback Archery',
     tagline: 'Loose arrows at three targets from a galloping horse.',
+    rotate: 'Please rotate your phone to landscape',
     howto: 'How to Play & Settings', howtoTitle: 'How to Play',
     privacy: 'Privacy Policy', privacyUrl: 'https://techgym.jp/privacy-policy-en/', adSettings: 'Ad settings',
     tAim: 'Drag on the screen to aim', tDraw: 'Hold “Draw” to raise, draw and aim — release to loose', tCam: '“View” switches the camera',

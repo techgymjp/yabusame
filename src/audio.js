@@ -1,4 +1,38 @@
 // WebAudio による効果音の合成（音声ファイル不要）
+// 効果音とBGMは、起動時に OfflineAudioContext で音声データにしておき、ゲーム中は再生するだけにする
+
+export const RENDER_RATE = 32000;
+let NOISE = null;
+// ピンクノイズ（全体で 1 つを使い回す）
+export function noiseBuffer() {
+  if (NOISE) return NOISE;
+  const len = RENDER_RATE * 2;
+  NOISE = new AudioBuffer({ length: len, numberOfChannels: 1, sampleRate: RENDER_RATE });
+  const d = NOISE.getChannelData(0);
+  let b0 = 0, b1 = 0, b2 = 0;
+  for (let i = 0; i < len; i++) {
+    const w = Math.random() * 2 - 1;
+    b0 = 0.99765 * b0 + w * 0.099046;
+    b1 = 0.963 * b1 + w * 0.2965164;
+    b2 = 0.57 * b2 + w * 1.0526913;
+    d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.2;
+  }
+  return NOISE;
+}
+
+// fn(proxy) で鳴らした音を、指定秒数ぶん音声データに書き出す
+export async function renderOffline(seconds, fn, channels = 1) {
+  const ctx = new OfflineAudioContext(channels, Math.ceil(seconds * RENDER_RATE), RENDER_RATE);
+  const master = ctx.createGain();
+  master.connect(ctx.destination);
+  const proxy = Object.create(Sound.prototype);
+  proxy.ctx = ctx;
+  proxy.master = master;
+  proxy.noise = noiseBuffer();
+  fn(proxy, ctx, master);
+  return ctx.startRendering();
+}
+
 export class Sound {
   constructor() {
     this.ctx = null;
@@ -13,20 +47,53 @@ export class Sound {
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.8;
     this.master.connect(this.ctx.destination);
-    const len = this.ctx.sampleRate * 2;
-    this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-    const d = this.noise.getChannelData(0);
-    let b0 = 0, b1 = 0, b2 = 0;
-    for (let i = 0; i < len; i++) {
-      const w = Math.random() * 2 - 1;
-      // ピンクノイズ近似
-      b0 = 0.99765 * b0 + w * 0.099046;
-      b1 = 0.963 * b1 + w * 0.2965164;
-      b2 = 0.57 * b2 + w * 1.0526913;
-      d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.2;
-    }
+    this.noise = noiseBuffer();
     this.startAmbience();
+    if (this.onInit) this.onInit();
   }
+
+  // ---------- 事前に作った音を鳴らす（その場で合成しないので途切れにくい） ----------
+  // ゲーム開始前（読み込み中）に、効果音をすべて音声データにしておく
+  async preload() {
+    const jobs = {
+      hoof0: [0.22, p => p._hoof(1, 0)], hoof1: [0.22, p => p._hoof(1, 0)], hoof2: [0.22, p => p._hoof(1, 0)],
+      creakLo: [0.45, p => p._creak(0.3)], creakHi: [0.45, p => p._creak(0.9)],
+      twang: [0.6, p => p._twang(1)], twangWeak: [0.6, p => p._twang(0.4)],
+      hit: [4.6, p => p._hit(false)], hitCenter: [5.2, p => p._hit(true)],
+      grand: [6, p => p._grand()], cheer: [4.2, p => p._cheer(1.2)], cheerBig: [5, p => p._cheer(2)],
+      thud: [0.2, p => p._thud()], drum: [1.8, p => p._drum()],
+    };
+    // 並列に書き出す（OfflineAudioContext は別スレッドで処理される）
+    const entries = Object.entries(jobs);
+    const bufs = await Promise.all(entries.map(([, [sec, fn]]) => renderOffline(sec, fn)));
+    this.buffers = Object.fromEntries(entries.map(([name], i) => [name, bufs[i]]));
+  }
+
+  play(name, vol = 1, pan = 0, rate = 1) {
+    if (!this.ctx || !this.buffers || !this.buffers[name]) return;
+    const c = this.ctx;
+    const s = c.createBufferSource();
+    s.buffer = this.buffers[name];
+    s.playbackRate.value = rate;
+    const g = c.createGain();
+    g.gain.value = vol;
+    s.connect(g);
+    if (pan && c.createStereoPanner) {
+      const p = c.createStereoPanner();
+      p.pan.value = pan;
+      g.connect(p).connect(this.master);
+    } else g.connect(this.master);
+    s.start();
+  }
+
+  hoof(vol = 1, pan = 0) { this.play('hoof' + ((Math.random() * 3) | 0), vol, pan, 0.92 + Math.random() * 0.16); }
+  creak(amount) { this.play(amount > 0.5 ? 'creakHi' : 'creakLo'); }
+  twang(power) { this.play(power > 0.6 ? 'twang' : 'twangWeak'); }
+  hit(center) { this.play(center ? 'hitCenter' : 'hit'); }
+  grand() { this.play('grand'); }
+  cheer(level = 1) { this.play(level > 1.5 ? 'cheerBig' : 'cheer', Math.min(1.3, level / 1.2)); }
+  thud() { this.play('thud'); }
+  drum() { this.play('drum'); }
 
   resume() {
     if (this.ctx && this.ctx.state === 'suspended' && !this.held) this.ctx.resume();
@@ -94,7 +161,7 @@ export class Sound {
     this.rushGain.gain.setTargetAtTime(Math.min(0.12, speed * 0.008), this.ctx.currentTime, 0.2);
   }
 
-  hoof(vol = 1, pan = 0) {
+  _hoof(vol = 1, pan = 0) {
     if (!this.ctx) return;
     const c = this.ctx, t = c.currentTime;
     const o = c.createOscillator();
@@ -121,7 +188,7 @@ export class Sound {
     n.start(t, Math.random()); n.stop(t + 0.12);
   }
 
-  creak(amount) {
+  _creak(amount) {
     // 弓を引くきしみ
     if (!this.ctx) return;
     const c = this.ctx, t = c.currentTime;
@@ -138,7 +205,7 @@ export class Sound {
     n.start(t, Math.random()); n.stop(t + 0.4);
   }
 
-  twang(power) {
+  _twang(power) {
     if (!this.ctx) return;
     const c = this.ctx, t = c.currentTime;
     // 弦音（つるね）
@@ -205,7 +272,7 @@ export class Sound {
     };
   }
 
-  hit(center) {
+  _hit(center) {
     if (!this.ctx) return;
     const c = this.ctx, t = c.currentTime;
     // 板が割れる「パーン」
@@ -241,12 +308,12 @@ export class Sound {
       k.connect(kg).connect(this.master);
       k.start(tt); k.stop(tt + 0.08);
     }
-    this.boom(center ? 1.3 : 1);
-    this.cheer(center ? 1.6 : 1.2);
+    this._boom(center ? 1.3 : 1);
+    this._cheer(center ? 1.6 : 1.2);
   }
 
   // 太鼓の一打（ドン）
-  boom(level = 1, delay = 0) {
+  _boom(level = 1, delay = 0) {
     if (!this.ctx) return;
     const c = this.ctx, t = c.currentTime + delay;
     const o = c.createOscillator();
@@ -269,15 +336,15 @@ export class Sound {
   }
 
   // 皆中：太鼓の連打と大歓声
-  grand() {
+  _grand() {
     if (!this.ctx) return;
-    for (let i = 0; i < 9; i++) this.boom(0.55 + i * 0.06, i * 0.11);
-    this.boom(1.4, 1.15);
-    this.boom(1.4, 1.5);
-    this.cheer(2.2);
+    for (let i = 0; i < 9; i++) this._boom(0.55 + i * 0.06, i * 0.11);
+    this._boom(1.4, 1.15);
+    this._boom(1.4, 1.5);
+    this._cheer(2.2);
   }
 
-  thud() {
+  _thud() {
     if (!this.ctx) return;
     const c = this.ctx, t = c.currentTime;
     const n = this.noiseSrc();
@@ -291,7 +358,7 @@ export class Sound {
     n.start(t, Math.random()); n.stop(t + 0.15);
   }
 
-  cheer(level = 1) {
+  _cheer(level = 1) {
     if (!this.ctx) return;
     const c = this.ctx, t = c.currentTime;
     // 歓声と拍手
@@ -322,7 +389,7 @@ export class Sound {
     }
   }
 
-  drum() {
+  _drum() {
     // 開始の太鼓
     if (!this.ctx) return;
     const c = this.ctx;

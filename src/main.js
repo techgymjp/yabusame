@@ -1122,8 +1122,17 @@ rider.setFirstPerson(false);
 vm.visible = false;
 setDiff(G.diffKey);
 G.state = 'title';
-$('loading').classList.add('hidden');
-requestAnimationFrame(frame);
+// 効果音と BGM をゲーム開始前に音声データにしておく（スマホで音が途切れないように）。
+// 書き出しを早く終えるため、描画は音の準備ができてから始める
+sound.onInit = () => music.start();
+(async () => {
+  try {
+    await Promise.all([sound.preload(), music.preload()]);
+  } catch (e) { console.warn('audio preload failed', e); }
+  $('loading').classList.add('hidden');
+  last = performance.now();
+  requestAnimationFrame(frame);
+})();
 // 自動テスト用：描画せずに時間を進める
 function step(n = 1, dt = 1 / 60) {
   for (let i = 0; i < n; i++) {
@@ -1135,4 +1144,4 @@ function step(n = 1, dt = 1 / 60) {
     updatePops(dt);
   }
 }
-window.__yabusame = { G, world, camera, horse, rider, startRun, newRun, shoot, step, predictImpact }; // @web-only
+window.__yabusame = { G, world, camera, horse, rider, sound, music, startRun, newRun, shoot, step, predictImpact }; // @web-only

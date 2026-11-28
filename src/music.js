@@ -1,4 +1,6 @@
 // BGM：都節音階（ミヤコブシ）の箏・篠笛・太鼓を WebAudio で合成する
+// 起動時に各曲を 1 ループぶんの音声データにしておき、ゲーム中はそれを繰り返し再生するだけにする（途切れ防止）
+import { renderOffline, RENDER_RATE } from './audio.js';
 const BASE = 293.66; // D4
 const SCALE = [0, 1, 5, 7, 8, 12, 13, 17, 19, 20, 24]; // 都節：D E♭ G A B♭
 const note = (deg, oct = 0) => BASE * Math.pow(2, (SCALE[((deg % 5) + 5) % 5] + 12 * (Math.floor(deg / 5) + oct)) / 12);
@@ -13,11 +15,14 @@ const SONGS = {
 };
 // 篠笛の旋律（音階の度数、null は休み、長さは 8 分音符単位）
 const MELODIES = {
-  title: [[4, 4], [3, 2], [2, 2], [3, 6], [null, 2], [2, 2], [1, 2], [0, 4], [null, 4], [5, 4], [4, 2], [3, 2], [2, 8]],
-  run: [[5, 2], [4, 1], [3, 1], [4, 2], [5, 2], [7, 3], [6, 1], [5, 4], [3, 2], [4, 2], [5, 1], [4, 1], [3, 2], [2, 4], [null, 2]],
-  result: [[2, 4], [3, 2], [4, 2], [5, 6], [4, 2], [3, 4], [2, 4], [null, 4]],
+  title: [[4, 4], [3, 2], [2, 2], [3, 6], [null, 2], [2, 2], [1, 2], [0, 4], [null, 4], [5, 4], [4, 2], [3, 2], [2, 8], [null, 4]],
+  run: [[5, 2], [4, 1], [3, 1], [4, 2], [5, 2], [7, 3], [6, 1], [5, 4], [3, 2], [4, 2], [5, 1], [4, 1], [3, 2], [2, 4], [null, 2], [null, 2]],
+  result: [[2, 4], [3, 2], [4, 2], [5, 6], [4, 2], [3, 4], [2, 4], [null, 4], [null, 4]],
   grand: [[5, 2], [7, 2], [8, 2], [7, 2], [5, 4], [6, 2], [7, 2], [10, 6], [null, 2]],
 };
+
+// 1 ループの長さ（8 分音符の数）。旋律・箏・太鼓の周期がそろう長さにしてある
+const LOOP_STEPS = { title: 48, ready: 16, run: 64, result: 32, grand: 48 };
 
 export class Music {
   constructor(sound) {
@@ -30,48 +35,52 @@ export class Music {
     this.timer = null;
   }
 
-  setup() {
-    const c = this.sound.ctx;
-    if (!c || this.out) return !!this.out;
-    this.out = c.createGain();
-    this.out.gain.value = 0;
-    // 広間の残響（短いフィードバック遅延）
-    const d = c.createDelay(1);
-    d.delayTime.value = 0.23;
-    const fb = c.createGain();
-    fb.gain.value = 0.28;
-    const lp = c.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 2200;
-    this.out.connect(this.sound.master);
-    this.out.connect(d); d.connect(lp); lp.connect(fb); fb.connect(d); lp.connect(this.sound.master);
-    return true;
+  // 全曲を音声データにする（ゲーム開始前に一度だけ）
+  async preload() {
+    const modes = Object.keys(SONGS);
+    const bufs = await Promise.all(modes.map(m => this.renderSong(m)));
+    this.buffers = Object.fromEntries(modes.map((m, i) => [m, bufs[i]]));
+    this.start();
   }
 
-  play(mode) {
-    if (mode === this.mode) return;
-    this.mode = mode;
-    this.step = 0; this.melIdx = 0; this.melLeft = 0;
-    if (!this.timer) this.timer = setInterval(() => this.tick(), 50);
-    if (this.out) {
-      const c = this.sound.ctx;
-      this.out.gain.cancelScheduledValues(c.currentTime);
-      this.out.gain.setTargetAtTime(SONGS[mode] ? SONGS[mode].vol * 0.5 : 0, c.currentTime, 0.4);
-      this.next = c.currentTime + 0.1;
-    }
+  async renderSong(mode) {
+    const song = SONGS[mode];
+    const steps = LOOP_STEPS[mode];
+    const dt = 60 / song.bpm / 2;
+    const L = steps * dt;
+    const tail = 2;
+    const buf = await renderOffline(L + tail, (proxy, ctx, master) => {
+      const m = new Music(proxy);
+      m.out = ctx.createGain();
+      m.out.gain.value = song.vol * 0.5;
+      // 広間の残響（短いフィードバック遅延）
+      const d = ctx.createDelay(1);
+      d.delayTime.value = 0.23;
+      const fb = ctx.createGain();
+      fb.gain.value = 0.28;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 2200;
+      m.out.connect(master);
+      m.out.connect(d); d.connect(lp); lp.connect(fb); fb.connect(d); lp.connect(master);
+      m.mode = mode;
+      m.schedule(steps, dt);
+    });
+    // ループの終わりからはみ出した残響を頭に重ね、継ぎ目なくつなぐ
+    const data = buf.getChannelData(0);
+    const n = Math.floor(L * RENDER_RATE);
+    for (let i = 0; i + n < data.length && i < n; i++) data[i] += data[n + i];
+    const out = new AudioBuffer({ length: n, numberOfChannels: 1, sampleRate: RENDER_RATE });
+    out.copyToChannel(data.subarray(0, n), 0);
+    return out;
   }
 
-  tick() {
-    if (!this.setup() || !this.mode) return;
-    const c = this.sound.ctx;
-    if (c.state !== 'running') { this.next = c.currentTime + 0.1; return; }
-    if (this.out.gain.value === 0) this.out.gain.setTargetAtTime(SONGS[this.mode].vol * 0.5, c.currentTime, 0.5);
+  // 1 ループぶんの音符を並べる（音声データ作成用）
+  schedule(steps, dt) {
     const song = SONGS[this.mode];
-    const dt = 60 / song.bpm / 2; // 8 分音符
-    if (this.next < c.currentTime) this.next = c.currentTime + 0.05;
-    while (this.next < c.currentTime + 0.25) {
-      const st = this.step;
-      const t = this.next;
-      // 箏の分散和音
+    const mel = MELODIES[this.mode];
+    let melIdx = 0, melLeft = 0;
+    for (let st = 0; st < steps; st++) {
+      const t = st * dt + 0.01;
       if (st % song.kotoEvery === 0) {
         const deg = song.koto[(st / song.kotoEvery) % song.koto.length];
         if (deg !== null && deg !== undefined) this.koto(note(deg, -1), t, 0.22);
@@ -79,20 +88,47 @@ export class Music {
       }
       if (song.taiko && song.taiko[st % 16]) this.taiko(t, st % 8 === 0 ? 1 : 0.7);
       if (song.shime && song.shime[st % 16]) this.shime(t, st % 4 === 0 ? 1 : 0.55);
-      // 篠笛
-      const mel = MELODIES[this.mode];
       if (song.flute && mel) {
-        if (this.melLeft <= 0) {
-          const [deg, len] = mel[this.melIdx % mel.length];
-          this.melIdx++;
-          this.melLeft = len;
+        if (melLeft <= 0) {
+          const [deg, len] = mel[melIdx % mel.length];
+          melIdx++;
+          melLeft = len;
           if (deg !== null) this.flute(note(deg, 1), t, len * dt);
         }
-        this.melLeft--;
+        melLeft--;
       }
-      this.step++;
-      this.next += dt;
     }
+  }
+
+  // 曲を切り替える（前の曲はフェードアウト）
+  play(mode) {
+    if (mode === this.mode && this.src) return;
+    this.mode = mode;
+    this.start();
+  }
+
+  start() {
+    const c = this.sound.ctx;
+    if (!c || !this.buffers || !this.buffers[this.mode]) return;
+    if (this.src && this.playing === this.mode) return;
+    const now = c.currentTime;
+    if (this.src) {
+      const old = this.src, og = this.gain;
+      og.gain.cancelScheduledValues(now);
+      og.gain.setTargetAtTime(0, now, 0.25);
+      old.stop(now + 1.2);
+    }
+    const src = c.createBufferSource();
+    src.buffer = this.buffers[this.mode];
+    src.loop = true;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.setTargetAtTime(1, now, 0.3);
+    src.connect(g).connect(this.sound.master);
+    src.start(now + 0.02);
+    this.src = src;
+    this.gain = g;
+    this.playing = this.mode;
   }
 
   koto(f, t, vol) {

@@ -985,8 +985,9 @@ function showResult() {
 }
 
 // ---------- シェア ----------
-// アプリでは Google Play のページ、Web 版では遊んでいるページを共有する
-const shareUrl = () => (isApp ? 'https://play.google.com/store/apps/details?id=jp.techgym.yabusame' : location.origin + location.pathname);
+// シェアするページ（Web 版・アプリ共通）
+const SHARE_URL = 'https://techgym.jp/column/claude-code-game-yabusame/';
+const shareUrl = () => SHARE_URL;
 $('share').addEventListener('click', async () => {
   const data = { title: tr('pageTitle'), text: G.shareText, url: shareUrl() };
   if (isApp && cap.Plugins && cap.Plugins.Share) {

@@ -195,3 +195,27 @@ kbd {
   .share { margin-top: 6px; }
   .share-btn { font-size: 13px; padding: 5px 12px; }
 }
+
+/* ---------- タイトルの下部・あそびかた・射直し ---------- */
+.foot { margin-top: 12px; font-size: 12px; color: #6b5440; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; align-items: center; }
+.foot a, .linkbtn { color: #6b5440; font: inherit; background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
+#help .controls { display: grid; text-align: left; max-width: 420px; margin: 6px auto 12px; font-size: 14px; }
+#title .intro { font-size: 18px; }
+body.touch #controls-pc, body:not(.touch) #controls-touch { display: none !important; }
+#retry { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 9; pointer-events: none; }
+.retry-box {
+  pointer-events: auto; background: rgba(243, 236, 220, 0.96); color: #1b1512; border-top: 5px solid #c0392b;
+  border-radius: 6px; padding: 16px 22px; text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,0.5); font-size: 17px;
+}
+.retry-btns { margin: 10px 0 8px; }
+button.big.small { font-size: 18px; padding: 8px 24px 8px 30px; }
+.retry-bar { height: 4px; background: rgba(0,0,0,0.15); border-radius: 2px; overflow: hidden; }
+#retry-fill { height: 100%; width: 100%; background: #c0392b; }
+/* バナー広告の高さぶん、画面の下に余白を取る */
+.screen { padding-bottom: calc(16px + var(--banner-h, 0px)); }
+@media (max-height: 500px) {
+  #title .intro { font-size: 14px; }
+  #help .controls { display: grid !important; font-size: 12px; margin: 2px auto 6px; }
+  body.touch #controls-pc, body:not(.touch) #controls-touch { display: none !important; }
+  .foot { margin-top: 4px; }
+}

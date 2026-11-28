@@ -37,14 +37,7 @@
   <div class="panel">
     <h1>流鏑馬</h1>
     <p class="sub" data-i18n="sub">YABUSAME — 騎射の神事</p>
-    <p class="intro" data-i18n="intro">疾走する馬の上で立ち上がり、弓手（左）に並ぶ三つの的を鏑矢で射抜け。<br>馬場二町（約218m）を駆け抜ける十数秒の勝負。</p>
-    <div class="row">
-      <span class="label" data-i18n="language">言語</span>
-      <div class="seg" id="lang">
-        <button data-v="ja">日本語</button>
-        <button data-v="en">English</button>
-      </div>
-    </div>
+    <p class="intro" data-i18n="tagline">疾走する馬上から、三つの的を射抜け。</p>
     <div class="row">
       <span class="label" data-i18n="difficulty">難易度</span>
       <div class="seg" id="difficulty">
@@ -54,6 +47,39 @@
       </div>
     </div>
     <p class="diffnote" id="diffnote"></p>
+    <p class="best" id="best"></p>
+    <button id="start" class="big" data-i18n="start">馬場入り</button>
+    <button id="howto" class="ghost" data-i18n="howto">あそびかた・設定</button>
+    <div class="foot">
+      <span id="version"></span>
+      <a id="privacy" href="https://techgym.jp/privacy-policy/" target="_blank" rel="noopener" data-i18n="privacy">プライバシーポリシー</a>
+      <button id="adPrivacy" class="linkbtn hidden" data-i18n="adSettings">広告の設定</button>
+    </div>
+  </div>
+</div>
+
+<div id="help" class="screen hidden">
+  <div class="panel">
+    <h2 data-i18n="howtoTitle">あそびかた</h2>
+    <p class="intro" data-i18n="intro">疾走する馬の上で立ち上がり、弓手（左）に並ぶ三つの的を鏑矢で射抜け。</p>
+    <div class="controls" id="controls-pc">
+      <div data-i18n="ctlAim"><kbd>マウス</kbd> 狙う</div>
+      <div data-i18n="ctlDraw"><kbd>左ボタン 長押し</kbd> 弓を引く ／ 離して放つ</div>
+      <div data-i18n="ctlHorse"><kbd>W</kbd><kbd>S</kbd> 馬を追う・抑える</div>
+      <div data-i18n="ctlCam"><kbd>C</kbd> 視点切替 &nbsp; <kbd>Esc</kbd> 一時停止</div>
+    </div>
+    <div class="controls" id="controls-touch">
+      <div data-i18n="tAim">画面をなぞって狙う</div>
+      <div data-i18n="tDraw">「引く」を長押しで打起し→引分け→会、離して放つ</div>
+      <div data-i18n="tCam">「視点」で視点を切り替え</div>
+    </div>
+    <div class="row">
+      <span class="label" data-i18n="language">言語</span>
+      <div class="seg" id="lang">
+        <button data-v="ja">日本語</button>
+        <button data-v="en">English</button>
+      </div>
+    </div>
     <div class="row">
       <span class="label" data-i18n="quality">画質</span>
       <div class="seg" id="quality">
@@ -66,14 +92,19 @@
       <span class="label" data-i18n="sensitivity">感度</span>
       <input type="range" id="sens" min="0.4" max="2.5" step="0.1" value="1">
     </div>
-    <button id="start" class="big" data-i18n="start">馬場入り</button>
-    <div class="controls">
-      <div data-i18n="ctlAim"><kbd>マウス</kbd> 狙う</div>
-      <div data-i18n="ctlDraw"><kbd>左ボタン 長押し</kbd> 弓を引く ／ 離して放つ</div>
-      <div data-i18n="ctlHorse"><kbd>W</kbd><kbd>S</kbd> 馬を追う・抑える</div>
-      <div data-i18n="ctlCam"><kbd>C</kbd> 視点切替（肩越し・一人称・後方） &nbsp; <kbd>Esc</kbd> 一時停止</div>
+    <button id="help-start" class="big" data-i18n="start">馬場入り</button>
+    <button id="help-back" class="ghost" data-i18n="toTitle">タイトルへ</button>
+  </div>
+</div>
+
+<div id="retry" class="hidden">
+  <div class="retry-box">
+    <div data-i18n="retryQ">広告を見て、この的を射直しますか？</div>
+    <div class="retry-btns">
+      <button id="retry-yes" class="big small" data-i18n="retryYes">射直す</button>
+      <button id="retry-no" class="ghost" data-i18n="retryNo">先へ進む</button>
     </div>
-    <p class="best" id="best"></p>
+    <div class="retry-bar"><div id="retry-fill"></div></div>
   </div>
 </div>
 
@@ -93,8 +124,8 @@
     <p class="best" id="result-best"></p>
     <div class="share">
       <button id="share" class="share-btn" data-i18n="share">シェア</button>
-      <button id="share-x" class="share-btn x" data-i18n="shareX">X でポスト</button>
-      <button id="share-copy" class="share-btn ghosty" data-i18n="copyLink">リンクをコピー</button>
+      <button id="share-x" class="share-btn x" data-i18n="shareX">X でポスト</button> <!-- @web-only -->
+      <button id="share-copy" class="share-btn ghosty" data-i18n="copyLink">リンクをコピー</button> <!-- @web-only -->
     </div>
     <button id="again" class="big" data-i18n="again">もう一度</button>
     <button id="toTitle" class="ghost" data-i18n="toTitle">タイトルへ</button>
@@ -108,6 +139,9 @@
 
 <div id="loading" data-i18n="loading">支度中…</div>
 
+<script src="src/ads-config.js"></script>
+<script src="src/build-info.js"></script>
+<script src="src/ads.js"></script>
 <script type="module" src="src/main.js"></script>
 </body>
 </html>

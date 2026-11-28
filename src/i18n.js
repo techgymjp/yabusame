@@ -2,8 +2,14 @@
 const DICT = {
   ja: {
     pageTitle: '流鏑馬 — YABUSAME',
+    tagline: '疾走する馬上から、三つの的を射抜け。',
+    howto: 'あそびかた・設定', howtoTitle: 'あそびかた',
+    privacy: 'プライバシーポリシー', privacyUrl: 'https://techgym.jp/privacy-policy/', adSettings: '広告の設定',
+    tAim: '画面をなぞって狙う', tDraw: '「引く」を長押しで打起し→引分け→会、離して放つ', tCam: '「視点」で視点を切り替え',
+    retryQ: '広告を見て、この的を射直しますか？（残り {n} 回）', retryYes: '射直す', retryNo: '先へ進む',
+    retryDone: '射直し', rowRetry: '射直し', rowRetryVal: '{n} 回', shareRetry: '（射直し{n}回）',
     sub: 'YABUSAME — 騎射の神事',
-    intro: '疾走する馬の上で立ち上がり、弓手（左）に並ぶ三つの的を鏑矢で射抜け。<br>馬場二町（約218m）を駆け抜ける十数秒の勝負。',
+    intro: '疾走する馬の上で鐙に立ち、弓手（左）に並ぶ三つの的を鏑矢で射抜く。馬場二町（約218m）を駆け抜ける十数秒の勝負。',
     difficulty: '難易度', quality: '画質', sensitivity: '感度', language: '言語',
     easy: '初級', normal: '中級', hard: '本式',
     qHigh: '高', qMed: '中', qLow: '低',
@@ -35,12 +41,18 @@ const DICT = {
     points: '点',
     newRecord: '新記録！（これまで {b} 点）', firstRecord: '初記録', bestRecord: '最高記録 {b} 点',
     share: 'シェア', shareX: 'X でポスト', copyLink: 'リンクをコピー', copied: 'コピーしました',
-    shareText: '流鏑馬で{title}！ {score}点（{diff}）{marks} #流鏑馬 #yabusame',
+    shareText: '流鏑馬で{title}！ {score}点（{diff}）{marks}{retry} #流鏑馬 #yabusame',
   },
   en: {
     pageTitle: 'YABUSAME — Horseback Archery',
+    tagline: 'Loose arrows at three targets from a galloping horse.',
+    howto: 'How to Play & Settings', howtoTitle: 'How to Play',
+    privacy: 'Privacy Policy', privacyUrl: 'https://techgym.jp/privacy-policy-en/', adSettings: 'Ad settings',
+    tAim: 'Drag on the screen to aim', tDraw: 'Hold “Draw” to raise, draw and aim — release to loose', tCam: '“View” switches the camera',
+    retryQ: 'Watch an ad to shoot this target again? ({n} left)', retryYes: 'Retry', retryNo: 'Ride on',
+    retryDone: 'Retry', rowRetry: 'Retries', rowRetryVal: '{n}', shareRetry: ' (retries: {n})',
     sub: 'YABUSAME — Sacred Horseback Archery',
-    intro: 'Stand in the stirrups of a galloping horse and loose whistling arrows at three targets on your left.<br>A few seconds of glory along a 218 m course.',
+    intro: 'Stand in the stirrups of a galloping horse and loose whistling arrows at three targets on your left — a few seconds of glory along a 218 m course.',
     difficulty: 'Difficulty', quality: 'Graphics', sensitivity: 'Sensitivity', language: 'Language',
     easy: 'Easy', normal: 'Normal', hard: 'Master',
     qHigh: 'High', qMed: 'Med', qLow: 'Low',
@@ -72,7 +84,7 @@ const DICT = {
     points: 'pts',
     newRecord: 'New record! (previous {b} pts)', firstRecord: 'First record', bestRecord: 'Best {b} pts',
     share: 'Share', shareX: 'Post on X', copyLink: 'Copy link', copied: 'Copied!',
-    shareText: 'Yabusame: {title} {score} pts ({diff}) {marks} #yabusame',
+    shareText: 'Yabusame: {title} {score} pts ({diff}) {marks}{retry} #yabusame',
   },
 };
 
@@ -100,4 +112,6 @@ export function applyI18n() {
   document.title = t('pageTitle');
   document.querySelectorAll('[data-i18n]').forEach(el => { el.innerHTML = t(el.dataset.i18n); });
   document.querySelectorAll('#lang button').forEach(b => b.classList.toggle('on', b.dataset.v === lang));
+  const pv = document.getElementById('privacy');
+  if (pv) pv.href = t('privacyUrl');
 }

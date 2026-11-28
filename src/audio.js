@@ -29,7 +29,18 @@ export class Sound {
   }
 
   resume() {
-    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+    if (this.ctx && this.ctx.state === 'suspended' && !this.held) this.ctx.resume();
+  }
+
+  // 広告表示中・アプリ切り替え時は音を止める
+  suspend() {
+    this.held = true;
+    if (this.ctx && this.ctx.state === 'running') this.ctx.suspend();
+  }
+
+  release() {
+    this.held = false;
+    this.resume();
   }
 
   noiseSrc(loop = false) {

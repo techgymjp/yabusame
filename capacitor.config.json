@@ -1,0 +1,8 @@
+{
+  "appId": "jp.techgym.yabusame",
+  "appName": "流鏑馬",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#1a1612"
+  }
+}

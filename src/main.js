@@ -9,6 +9,7 @@ import { puffTexture, hoofPrintTexture } from './textures.js';
 import { createPost, QUALITY } from './post.js';
 import { windUniforms } from './vegetation.js';
 import { HitFX } from './effects.js';
+import { Music } from './music.js';
 import { t as tr, setLang, applyI18n, getLang } from './i18n.js';
 
 const DIFF = {
@@ -83,6 +84,7 @@ rider.attachProps(scene);
 const vm = new ViewModel(camera);
 const sound = new Sound();
 const fx = new HitFX(scene);
+const music = new Music(sound);
 
 // 砂埃
 const dustTex = puffTexture();
@@ -291,33 +293,141 @@ function toggleCam() {
   if (['ready', 'run', 'finish'].includes(G.state)) message(`<small>${tr(CAM_NAMES[G.camMode])}</small>`, 900);
 }
 
-// ---------- 画面遷移 ----------
-$('start').addEventListener('click', () => { sound.init(); sound.resume(); lockPointer(); newRun(); });
-$('again').addEventListener('click', () => { sound.resume(); lockPointer(); newRun(); });
-$('toTitle').addEventListener('click', toTitle);
-$('quit').addEventListener('click', toTitle);
-$('resume').addEventListener('click', resume);
+// ---------- 画面遷移（広告の出し方は docs の基本ルールどおり） ----------
+const Ads = window.Ads || { available: false, showInterstitial: () => Promise.resolve(), showRewarded: () => Promise.resolve('unavailable'), setBanner() {}, initDone: Promise.resolve(), privacyOptionsRequired: false, showPrivacyOptions: () => Promise.resolve() };
+const cap = window.Capacitor;
+const isApp = !!(cap && cap.isNativePlatform && cap.isNativePlatform());
+window.gameAudio = { suspend: () => sound.suspend(), resume: () => sound.release() };
+if (isTouch) document.body.classList.add('touch');
+let busy = false; // 全画面広告の表示中に二度押しされないように
+async function withInterstitial(fn) {
+  if (busy) return;
+  busy = true;
+  try { await Ads.showInterstitial(); } finally { busy = false; }
+  fn();
+}
+// バナーはタイトル・あそびかた・ポーズ・結果画面だけ
+function updateBanner() {
+  Ads.setBanner(['title', 'help', 'paused', 'result'].includes(G.state));
+}
+function startFromMenu() {
+  sound.init(); sound.resume(); lockPointer();
+  music.play('ready');
+  withInterstitial(newRun);
+}
+$('start').addEventListener('click', startFromMenu);
+$('help-start').addEventListener('click', startFromMenu);
+$('again').addEventListener('click', () => { sound.resume(); lockPointer(); withInterstitial(newRun); });
+$('toTitle').addEventListener('click', () => withInterstitial(toTitle));
+$('quit').addEventListener('click', () => withInterstitial(toTitle));
+$('resume').addEventListener('click', () => withInterstitial(resume));
+$('howto').addEventListener('click', () => { sound.init(); music.play('title'); G.state = 'help'; show('title', false); show('help', true); updateBanner(); });
+$('help-back').addEventListener('click', () => withInterstitial(toTitle));
+$('adPrivacy').addEventListener('click', () => Ads.showPrivacyOptions());
+$('version').textContent = window.APP_VERSION || '';
+// ブラウザは操作があるまで音を出せないので、最初のタップでタイトルの曲を始める
+window.addEventListener('pointerdown', () => {
+  sound.init(); sound.resume();
+  if (G.state === 'title' || G.state === 'help') music.play('title');
+}, { once: true });
+Ads.initDone.then(() => { if (Ads.privacyOptionsRequired) $('adPrivacy').classList.remove('hidden'); });
 
 function toTitle() {
   G.state = 'title';
-  show('title', true); show('result', false); show('pause', false); show('hud', false); show('touch', false);
+  show('title', true); show('help', false); show('result', false); show('pause', false); show('hud', false); show('touch', false); show('retry', false);
   setDiff(G.diffKey);
   resetCourse();
   rider.setFirstPerson(false);
   vm.visible = false;
+  updateBanner();
+  music.play('title');
 }
 function pause() {
-  if (G.state === 'paused') return;
+  if (G.state === 'paused' || !['ready', 'run', 'finish', 'retry'].includes(G.state)) return;
+  if (G.state === 'retry') hideRetry(false);
   G.prevState = G.state;
   G.state = 'paused';
   G.wantDraw = false;
   show('pause', true);
+  updateBanner();
 }
 function resume() {
   if (G.state !== 'paused') return;
   show('pause', false);
   G.state = G.prevState;
   lockPointer();
+  updateBanner();
+}
+
+// 戻るボタン（Android）：プレイ中はポーズ、ポーズ中は再開、メニューではアプリを終了
+if (isApp && cap.Plugins && cap.Plugins.App) {
+  cap.Plugins.App.addListener('backButton', () => {
+    if (['ready', 'run', 'finish', 'retry'].includes(G.state)) pause();
+    else if (G.state === 'paused') withInterstitial(resume);
+    else if (G.state === 'help') withInterstitial(toTitle);
+    else cap.Plugins.App.exitApp();
+  });
+}
+// 別のアプリに切り替えたら自動でポーズし、音も止める
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { pause(); sound.suspend(); }
+  else sound.release();
+});
+
+// ---------- 射直し（リワード広告） ----------
+const RETRY_MAX = 3;
+function offerRetry(idx) {
+  if (!Ads.available || G.retries >= RETRY_MAX) return;
+  // 外れたことを見届けてから聞く
+  G.retryPending = { idx, at: G.clock + 1.6 };
+}
+function showRetry(idx) {
+  G.retryPending = null;
+  G.retryPrev = G.state;
+  G.state = 'retry';
+  G.retryIdx = idx;
+  G.retryTimer = 6;
+  G.wantDraw = false;
+  $('retry').querySelector('[data-i18n="retryQ"]').textContent = tr('retryQ', { n: RETRY_MAX - G.retries });
+  show('retry', true);
+}
+function hideRetry(cont = true) {
+  show('retry', false);
+  if (cont && G.state === 'retry') G.state = G.retryPrev;
+}
+$('retry-no').addEventListener('click', () => hideRetry());
+$('retry-yes').addEventListener('click', async () => {
+  if (busy) return;
+  busy = true;
+  const idx = G.retryIdx;
+  show('retry', false);
+  const r = await Ads.showRewarded();
+  busy = false;
+  if (G.state !== 'retry') return;
+  G.state = G.retryPrev;
+  // 広告を最後まで見たときだけ射直せる
+  if (r === 'rewarded') doRetry(idx);
+});
+function doRetry(idx) {
+  const snap = G.snaps[idx];
+  const tg = world.targets[idx];
+  if (!snap) return;
+  for (const a of G.arrows) { scene.remove(a.mesh); a.whistle && a.whistle.stop(); if (a.trail) scene.remove(a.trail.mesh); }
+  G.arrows = [];
+  // 的の手前に戻り、矢の数と時間もその時点に戻す（風などの条件は同じ）
+  G.x = snap.x;
+  G.arrowsLeft = snap.arrowsLeft;
+  G.nocked = 1; G.nockTimer = 0; G.releaseT = 9; G.draw = 0; G.raise = 0;
+  if (G.t0 !== null) G.t0 = G.clock - snap.runTime;
+  G.finalTime = null;
+  tg.done = false;
+  tg.board.visible = true;
+  G.results[idx] = { name: tg.name, hit: false, points: 0, r: null };
+  document.querySelectorAll('#hud-targets .t')[idx].className = 't';
+  G.retries++;
+  if (G.state === 'finish') G.state = 'run';
+  G.finishTimer = 0;
+  message(tr('retryDone'), 1000);
 }
 
 function resetCourse() {
@@ -347,9 +457,12 @@ function newRun() {
   const ang = Math.random() * Math.PI * 2;
   G.wind.set(Math.cos(ang), 0, Math.sin(ang)).multiplyScalar(Math.random() * d.wind);
   G.finishTimer = 0;
+  G.retries = 0; G.snaps = []; G.retryPending = null;
   G.state = 'ready';
   applyCam();
-  show('title', false); show('result', false); show('pause', false); show('hud', true);
+  show('title', false); show('help', false); show('result', false); show('pause', false); show('hud', true); show('retry', false);
+  updateBanner();
+  music.play('ready');
   show('touch', isTouch);
   $('reticle').style.display = 'none';
   document.querySelectorAll('#hud-targets .t').forEach(e => (e.className = 't'));
@@ -364,6 +477,7 @@ function startRun() {
   G.state = 'run';
   sound.init();
   sound.drum();
+  music.play('run');
   message(tr('go'), 1500);
   hint(tr(isTouch ? 'hintRunTouch' : 'hintRun'));
   setTimeout(() => { if (G.state === 'run') hint(''); }, 7000);
@@ -782,8 +896,12 @@ function update(dt, rdt) {
       G.results[i] = { name: tg.name, hit: false, points: 0 };
       document.querySelectorAll('#hud-targets .t')[i].className = 't miss';
       message(tr('miss', { n: i }), 1100);
+      offerRetry(i);
     }
+    // 射直し用：的の手前を通るときの状態を覚えておく
+    if (!G.snaps[i] && G.x >= tg.pos.x - 32) G.snaps[i] = { x: G.x, arrowsLeft: G.arrowsLeft, runTime: G.runTime };
   });
+  if (G.retryPending && G.clock >= G.retryPending.at && !G.hitCam) showRetry(G.retryPending.idx);
 
   // 的役の扇
   for (const j of world.judges) {
@@ -796,7 +914,7 @@ function update(dt, rdt) {
   if (G.state === 'finish') {
     G.finishTimer += dt;
     const flying = G.arrows.some(a => a.alive && !a.falling);
-    if ((G.speed < 0.5 && !flying) || G.finishTimer > 7) showResult();
+    if (((G.speed < 0.5 && !flying) || G.finishTimer > 7) && !G.retryPending) showResult();
   }
 
   // HUD
@@ -847,11 +965,12 @@ function showResult() {
   $('result-title').textContent = title;
   $('result-rows').innerHTML = G.results.map((r, i) => `<div class="r"><b>${tr('targetNames')[i]}</b><span>${r.hit ? tr(r.center ? 'rowCenter' : 'rowHit', { p: r.points }) : tr('rowMiss')}</span></div>`).join('')
     + `<div class="r"><b>${tr('rowRun')}</b><span>${tr('rowRunVal', { t: time.toFixed(2), b: timeBonus })}</span></div>`
-    + (allBonus ? `<div class="r"><b>${tr('rowAll')}</b><span>${tr('rowAllVal', { b: allBonus })}</span></div>` : '');
+    + (allBonus ? `<div class="r"><b>${tr('rowAll')}</b><span>${tr('rowAllVal', { b: allBonus })}</span></div>` : '')
+    + (G.retries ? `<div class="r"><b>${tr('rowRetry')}</b><span>${tr('rowRetryVal', { n: G.retries })}</span></div>` : '');
   $('result-score').innerHTML = `${total}<small> ${tr('points')}</small>`;
   // シェア用の文
   const marks = G.results.map(r => (r.hit ? (r.center ? '◎' : '○') : '×')).join('');
-  G.shareText = tr('shareText', { title, score: total, diff: tr(G.diffKey), marks });
+  G.shareText = tr('shareText', { title, score: total, diff: tr(G.diffKey), marks, retry: G.retries ? tr('shareRetry', { n: G.retries }) : '' });
   const key = 'yabusame.best.' + G.diffKey;
   const best = store.get(key) || 0;
   if (total > best) {
@@ -860,13 +979,20 @@ function showResult() {
   } else $('result-best').textContent = tr('bestRecord', { b: best });
   show('result', true);
   show('touch', false);
+  updateBanner();
+  music.play(hits === 3 ? 'grand' : 'result');
   if (hits === 3) sound.cheer(1.6);
 }
 
 // ---------- シェア ----------
-const shareUrl = () => location.origin + location.pathname;
+// アプリでは Google Play のページ、Web 版では遊んでいるページを共有する
+const shareUrl = () => (isApp ? 'https://play.google.com/store/apps/details?id=jp.techgym.yabusame' : location.origin + location.pathname);
 $('share').addEventListener('click', async () => {
   const data = { title: tr('pageTitle'), text: G.shareText, url: shareUrl() };
+  if (isApp && cap.Plugins && cap.Plugins.Share) {
+    try { await cap.Plugins.Share.share({ ...data, dialogTitle: tr('share') }); } catch { /* 閉じた */ }
+    return;
+  }
   if (navigator.share) {
     try { await navigator.share(data); return; } catch (e) { if (e && e.name === 'AbortError') return; }
   }
@@ -876,8 +1002,8 @@ function openX() {
   const u = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(G.shareText) + '&url=' + encodeURIComponent(shareUrl());
   window.open(u, '_blank', 'noopener,width=600,height=500');
 }
-$('share-x').addEventListener('click', openX);
-$('share-copy').addEventListener('click', async () => {
+$('share-x')?.addEventListener('click', openX);
+$('share-copy')?.addEventListener('click', async () => {
   const text = G.shareText + ' ' + shareUrl();
   try {
     await navigator.clipboard.writeText(text);
@@ -923,6 +1049,12 @@ function frame(now) {
   G.timeScale += (targetScale - G.timeScale) * Math.min(1, rdt * (targetScale < 1 ? 20 : 4));
   const dt = rdt * G.timeScale;
 
+  if (G.state === 'retry') {
+    // 射直しの案内は数秒で自動的に消して先へ進める
+    G.retryTimer -= rdt;
+    $('retry-fill').style.width = Math.max(0, G.retryTimer / 6 * 100) + '%';
+    if (G.retryTimer <= 0 && !busy) hideRetry();
+  }
   if (G.frozen) {
     // テスト用の停止
   } else if (G.state === 'title') {

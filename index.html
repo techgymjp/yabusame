@@ -19,51 +19,59 @@
 <div id="hud" class="hidden">
   <div id="hud-top">
     <div class="targets" id="hud-targets"></div>
-    <div class="stat"><span class="label">矢</span><span id="hud-arrows"></span></div>
-    <div class="stat"><span class="label">速</span><span id="hud-speed">0</span><small>km/h</small></div>
-    <div class="stat"><span class="label">時</span><span id="hud-time">0.00</span><small>秒</small></div>
-    <div class="stat"><span class="label">風</span><span id="hud-wind"></span></div>
+    <div class="stat"><span class="label" data-i18n="hudArrows">矢</span><span id="hud-arrows"></span></div>
+    <div class="stat"><span class="label" data-i18n="hudSpeed">速</span><span id="hud-speed">0</span><small>km/h</small></div>
+    <div class="stat"><span class="label" data-i18n="hudTime">時</span><span id="hud-time">0.00</span><small data-i18n="sec">秒</small></div>
+    <div class="stat"><span class="label" data-i18n="hudWind">風</span><span id="hud-wind"></span></div>
   </div>
   <div id="progress"><div id="progress-track"></div><div id="progress-horse">🐎</div></div>
   <div id="reticle"></div>
   <div id="impact"></div>
   <div id="draw-gauge"><div id="draw-fill"></div></div>
   <div id="message"></div>
+  <div id="flash"></div>
   <div id="hint"></div>
 </div>
 
 <div id="title" class="screen">
   <div class="panel">
     <h1>流鏑馬</h1>
-    <p class="sub">YABUSAME — 騎射の神事</p>
-    <p class="intro">疾走する馬の上で立ち上がり、弓手（左）に並ぶ三つの的を鏑矢で射抜け。<br>馬場二町（約218m）を駆け抜ける十数秒の勝負。</p>
+    <p class="sub" data-i18n="sub">YABUSAME — 騎射の神事</p>
+    <p class="intro" data-i18n="intro">疾走する馬の上で立ち上がり、弓手（左）に並ぶ三つの的を鏑矢で射抜け。<br>馬場二町（約218m）を駆け抜ける十数秒の勝負。</p>
     <div class="row">
-      <span class="label">難易度</span>
+      <span class="label" data-i18n="language">言語</span>
+      <div class="seg" id="lang">
+        <button data-v="ja">日本語</button>
+        <button data-v="en">English</button>
+      </div>
+    </div>
+    <div class="row">
+      <span class="label" data-i18n="difficulty">難易度</span>
       <div class="seg" id="difficulty">
-        <button data-v="easy">初級</button>
-        <button data-v="normal" class="on">中級</button>
-        <button data-v="hard">本式</button>
+        <button data-v="easy" data-i18n="easy">初級</button>
+        <button data-v="normal" class="on" data-i18n="normal">中級</button>
+        <button data-v="hard" data-i18n="hard">本式</button>
       </div>
     </div>
     <p class="diffnote" id="diffnote"></p>
     <div class="row">
-      <span class="label">画質</span>
+      <span class="label" data-i18n="quality">画質</span>
       <div class="seg" id="quality">
-        <button data-v="high">高</button>
-        <button data-v="medium">中</button>
-        <button data-v="low">低</button>
+        <button data-v="high" data-i18n="qHigh">高</button>
+        <button data-v="medium" data-i18n="qMed">中</button>
+        <button data-v="low" data-i18n="qLow">低</button>
       </div>
     </div>
     <div class="row">
-      <span class="label">感度</span>
+      <span class="label" data-i18n="sensitivity">感度</span>
       <input type="range" id="sens" min="0.4" max="2.5" step="0.1" value="1">
     </div>
-    <button id="start" class="big">馬場入り</button>
+    <button id="start" class="big" data-i18n="start">馬場入り</button>
     <div class="controls">
-      <div><kbd>マウス</kbd> 狙う</div>
-      <div><kbd>左ボタン 長押し</kbd> 弓を引く ／ 離して放つ</div>
-      <div><kbd>W</kbd><kbd>S</kbd> 馬を追う・抑える</div>
-      <div><kbd>C</kbd> 視点切替（肩越し・一人称・後方） &nbsp; <kbd>Esc</kbd> 一時停止</div>
+      <div data-i18n="ctlAim"><kbd>マウス</kbd> 狙う</div>
+      <div data-i18n="ctlDraw"><kbd>左ボタン 長押し</kbd> 弓を引く ／ 離して放つ</div>
+      <div data-i18n="ctlHorse"><kbd>W</kbd><kbd>S</kbd> 馬を追う・抑える</div>
+      <div data-i18n="ctlCam"><kbd>C</kbd> 視点切替（肩越し・一人称・後方） &nbsp; <kbd>Esc</kbd> 一時停止</div>
     </div>
     <p class="best" id="best"></p>
   </div>
@@ -71,9 +79,9 @@
 
 <div id="pause" class="screen hidden">
   <div class="panel small">
-    <h2>一時停止</h2>
-    <button id="resume" class="big">再開</button>
-    <button id="quit" class="ghost">タイトルへ</button>
+    <h2 data-i18n="paused">一時停止</h2>
+    <button id="resume" class="big" data-i18n="resume">再開</button>
+    <button id="quit" class="ghost" data-i18n="toTitle">タイトルへ</button>
   </div>
 </div>
 
@@ -83,17 +91,22 @@
     <div id="result-rows"></div>
     <div id="result-score"></div>
     <p class="best" id="result-best"></p>
-    <button id="again" class="big">もう一度</button>
-    <button id="toTitle" class="ghost">タイトルへ</button>
+    <div class="share">
+      <button id="share" class="share-btn" data-i18n="share">シェア</button>
+      <button id="share-x" class="share-btn x" data-i18n="shareX">X でポスト</button>
+      <button id="share-copy" class="share-btn ghosty" data-i18n="copyLink">リンクをコピー</button>
+    </div>
+    <button id="again" class="big" data-i18n="again">もう一度</button>
+    <button id="toTitle" class="ghost" data-i18n="toTitle">タイトルへ</button>
   </div>
 </div>
 
 <div id="touch" class="hidden">
-  <button id="touch-draw">引く</button>
-  <button id="touch-cam">視点</button>
+  <button id="touch-draw" data-i18n="touchDraw">引く</button>
+  <button id="touch-cam" data-i18n="touchCam">視点</button>
 </div>
 
-<div id="loading">支度中…</div>
+<div id="loading" data-i18n="loading">支度中…</div>
 
 <script type="module" src="src/main.js"></script>
 </body>

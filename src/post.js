@@ -78,13 +78,17 @@ export function createPost(renderer, scene, camera, quality) {
   composer.addPass(new OutputPass());
 
   return {
-    composer, grade, ao,
+    composer, grade, ao, bloom, boost: 0,
+    pulse(v) { this.boost = Math.max(this.boost, v); },
     setSize(w, h) {
       composer.setSize(w, h);
       grade.uniforms.uAspect.value = w / h;
     },
     render(dt, speed, time) {
       grade.uniforms.uSpeed.value = speed;
+      this.boost *= Math.exp(-dt * 3);
+      if (bloom) bloom.strength = 0.22 + this.boost * 1.2;
+      grade.uniforms.uVignette.value = 0.32 + this.boost * 0.25;
       grade.uniforms.uTime.value = time % 100;
       composer.render(dt);
     },

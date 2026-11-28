@@ -137,3 +137,61 @@ kbd {
   #hud-top { gap: 6px 14px; }
   .controls { display: none; }
 }
+
+/* ---------- 的中演出 ---------- */
+#flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+#flash.go { animation: flash 0.6s ease-out; }
+#flash.go.gold { background: radial-gradient(circle, #fff6d8 0%, #ffd77a 60%, #e8a33a 100%); animation-duration: 0.9s; }
+@keyframes flash { 0% { opacity: 0.85; } 100% { opacity: 0; } }
+#message.stamp { transition: none; }
+#message.stamp .word {
+  display: inline-block; animation: slam 0.45s cubic-bezier(.2,1.6,.4,1) both;
+  font-size: 1.25em; letter-spacing: 0.08em;
+  text-shadow: 0 3px 0 #7d1a12, 0 0 18px rgba(255,120,60,0.85), 0 0 40px rgba(255,200,120,0.6);
+}
+#message.stamp .seal {
+  display: inline-grid; place-items: center; vertical-align: middle; margin-right: 0.25em;
+  width: 1.05em; height: 1.05em; font-size: 0.75em; color: #fff; background: #b8231d;
+  border: 0.06em solid #f6d0c8; border-radius: 0.12em; transform: rotate(-8deg);
+  animation: seal 0.5s 0.12s cubic-bezier(.2,1.8,.4,1) both; box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+}
+#message.stamp small { animation: rise 0.6s 0.2s ease-out both; color: #ffe7a6; }
+#message.grand .word { color: #ffe08a; text-shadow: 0 3px 0 #6b4a0e, 0 0 24px #ffcf5a, 0 0 60px #ffb02e; font-size: 1.5em; }
+@keyframes slam { 0% { transform: scale(3); opacity: 0; filter: blur(6px); } 60% { opacity: 1; filter: blur(0); } 100% { transform: scale(1); } }
+@keyframes seal { 0% { transform: scale(2.6) rotate(-30deg); opacity: 0; } 100% { transform: scale(1) rotate(-8deg); opacity: 1; } }
+@keyframes rise { 0% { transform: translateY(14px); opacity: 0; } 100% { transform: none; opacity: 1; } }
+.pop {
+  position: absolute; transform: translate(-50%, -50%); font-family: "Yuji Syuku", serif; font-size: 34px; color: #fff;
+  text-shadow: 0 2px 0 #7d1a12, 0 0 10px rgba(255,140,80,0.9); pointer-events: none; animation: popin 0.4s cubic-bezier(.2,1.8,.4,1);
+}
+.pop.gold { color: #ffe08a; font-size: 42px; text-shadow: 0 2px 0 #6b4a0e, 0 0 14px #ffcf5a; }
+@keyframes popin { 0% { transform: translate(-50%, -50%) scale(0.2); } 100% { transform: translate(-50%, -50%) scale(1); } }
+
+/* ---------- シェア ---------- */
+.share { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 12px 0 2px; }
+.share-btn {
+  font: inherit; font-size: 15px; padding: 8px 16px; border-radius: 4px; cursor: pointer;
+  border: 1px solid #1b1512; background: #1b1512; color: #f3ecdc;
+}
+.share-btn.x { background: #000; border-color: #000; }
+.share-btn.ghosty { background: transparent; color: #1b1512; border-color: #8a6a4a; }
+.share-btn:active { transform: translateY(1px); }
+
+/* 横向きスマホなど高さの小さい画面では詰める */
+@media (max-height: 500px) {
+  .panel { padding: 12px 18px; border-top-width: 4px; }
+  h1 { font-size: 48px; }
+  h2 { font-size: 28px; margin-bottom: 4px; }
+  .sub { margin: 0 0 6px; }
+  .intro { font-size: 13px; line-height: 1.5; margin-bottom: 8px; }
+  .row { margin: 4px 0; }
+  .controls { display: none; }
+  button.big { font-size: 18px; padding: 8px 28px 8px 34px; margin: 8px 4px 4px; }
+  #result-rows { gap: 0; margin: 2px auto 4px; }
+  #result-rows .r { padding: 2px; font-size: 14px; }
+  #result-rows .r b { font-size: 16px; }
+  #result-score { font-size: 24px; margin: 2px 0; }
+  .best { margin-top: 4px; }
+  .share { margin-top: 6px; }
+  .share-btn { font-size: 13px; padding: 5px 12px; }
+}

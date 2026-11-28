@@ -8,19 +8,21 @@ import { Sound } from './audio.js';
 import { puffTexture, hoofPrintTexture } from './textures.js';
 import { createPost, QUALITY } from './post.js';
 import { windUniforms } from './vegetation.js';
+import { HitFX } from './effects.js';
+import { t as tr, setLang, applyI18n, getLang } from './i18n.js';
 
 const DIFF = {
   easy: {
     arrows: 5, speed: 12, sway: 0.55, nock: 0.9, reticle: 'impact', wind: 1.0, spread: 0.0015,
-    note: '矢5本・馬速 約43km/h・着弾予測を表示',
+    note: 'noteEasy',
   },
   normal: {
     arrows: 4, speed: 14, sway: 1.0, nock: 1.1, reticle: 'dot', wind: 2.2, spread: 0.003,
-    note: '矢4本・馬速 約50km/h・照準点のみ表示（馬の速度ぶん矢は前へ流れる）',
+    note: 'noteNormal',
   },
   hard: {
     arrows: 3, speed: 15.5, sway: 1.3, nock: 1.25, reticle: 'none', wind: 3.5, spread: 0.0045,
-    note: '一的一矢の本式・馬速 約56km/h・照準表示なし',
+    note: 'noteHard',
   },
 };
 
@@ -80,6 +82,7 @@ const rider = new Rider(horse);
 rider.attachProps(scene);
 const vm = new ViewModel(camera);
 const sound = new Sound();
+const fx = new HitFX(scene);
 
 // 砂埃
 const dustTex = puffTexture();
@@ -149,7 +152,8 @@ const hudTargets = $('hud-targets');
 COURSE.targets.forEach((t, i) => {
   const d = document.createElement('div');
   d.className = 't';
-  d.textContent = '一二三'[i];
+  d.dataset.idx = i;
+  d.textContent = tr('targetGlyphs')[i];
   hudTargets.appendChild(d);
 });
 const track = $('progress-track');
@@ -171,9 +175,9 @@ function setDiff(k) {
   G.diffKey = k;
   store.set('yabusame.diff', k);
   document.querySelectorAll('#difficulty button').forEach(b => b.classList.toggle('on', b.dataset.v === k));
-  $('diffnote').textContent = DIFF[k].note;
+  $('diffnote').textContent = tr(DIFF[k].note);
   const best = store.get('yabusame.best.' + k);
-  $('best').textContent = best ? `最高記録（${{ easy: '初級', normal: '中級', hard: '本式' }[k]}）: ${best} 点` : '';
+  $('best').textContent = best ? tr('best', { d: tr(k), s: best }) : '';
 }
 document.querySelectorAll('#difficulty button').forEach(b => b.addEventListener('click', () => setDiff(b.dataset.v)));
 document.querySelectorAll('#quality button').forEach(b => {
@@ -274,7 +278,7 @@ $('touch-cam').addEventListener('touchstart', e => { e.preventDefault(); toggleC
 
 // 視点：肩越し（標準）→ 一人称 → 後方
 const CAM_MODES = ['shoulder', 'fp', 'chase'];
-const CAM_NAMES = { shoulder: '肩越し視点', fp: '一人称視点', chase: '後方視点' };
+const CAM_NAMES = { shoulder: 'camShoulder', fp: 'camFp', chase: 'camChase' };
 function applyCam() {
   G.fp = G.camMode === 'fp';
   rider.setFirstPerson(G.fp);
@@ -284,7 +288,7 @@ function toggleCam() {
   G.camMode = CAM_MODES[(CAM_MODES.indexOf(G.camMode) + 1) % CAM_MODES.length];
   store.set('yabusame.cam', G.camMode);
   applyCam();
-  if (['ready', 'run', 'finish'].includes(G.state)) message(`<small>${CAM_NAMES[G.camMode]}</small>`, 900);
+  if (['ready', 'run', 'finish'].includes(G.state)) message(`<small>${tr(CAM_NAMES[G.camMode])}</small>`, 900);
 }
 
 // ---------- 画面遷移 ----------
@@ -320,6 +324,10 @@ function resetCourse() {
   for (const a of G.arrows) { scene.remove(a.mesh); a.whistle && a.whistle.stop(); if (a.trail) scene.remove(a.trail.mesh); }
   for (const p of G.pieces) scene.remove(p.mesh);
   G.arrows = []; G.pieces = [];
+  fx.clear();
+  G.hitCam = null;
+  for (const p of pops) p.el.remove();
+  pops.length = 0;
   for (const t of world.targets) {
     t.board.visible = true;
     t.done = false;
@@ -345,10 +353,10 @@ function newRun() {
   show('touch', isTouch);
   $('reticle').style.display = 'none';
   document.querySelectorAll('#hud-targets .t').forEach(e => (e.className = 't'));
-  hint(isTouch ? '「引く」をタップで発進' : 'クリック または スペースで発進');
+  hint(tr(isTouch ? 'hintStartTouch' : 'hintStart'));
   const w = G.wind;
   $('hud-wind').innerHTML = `<span style="display:inline-block;transform:rotate(${Math.atan2(w.z, w.x) * 180 / Math.PI}deg)">↑</span> ${w.length().toFixed(1)}<small>m/s</small>`;
-  message('馬場入り', 1400);
+  message(tr('enter'), 1400);
 }
 
 function startRun() {
@@ -356,8 +364,8 @@ function startRun() {
   G.state = 'run';
   sound.init();
   sound.drum();
-  message('いんよう、いー', 1500);
-  hint(isTouch ? '「引く」長押しで打起し→引分け→会、離して離れ' : '左ボタン長押しで打起し→引分け→会、離して離れ ／ W・Sで馬速');
+  message(tr('go'), 1500);
+  hint(tr(isTouch ? 'hintRunTouch' : 'hintRun'));
   setTimeout(() => { if (G.state === 'run') hint(''); }, 7000);
 }
 
@@ -471,25 +479,80 @@ function nearestTargetIndex(x) {
 function onHit(target, idx, hit, arrow) {
   target.done = true;
   target.board.visible = false;
-  G.pieces.push(...shatterBoard(scene, target, hit, arrow.vel, COURSE.boardSize));
-  for (let i = 0; i < 18; i++) {
-    spawnDust(hit.point, new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.3) * 3),
-      0.18, 0.6 + Math.random() * 0.4, 0xe2c99a, 0.9);
-  }
   const center = hit.r < 0.062;
+  const grand = G.results.filter((r, i) => i !== idx && r.hit).length === COURSE.targets.length - 1;
+  const power = grand ? 1.8 : center ? 1.4 : 1;
+  G.pieces.push(...shatterBoard(scene, target, hit, arrow.vel, COURSE.boardSize, power));
+  fx.burst(hit.point, arrow.vel, { center, grand });
+  for (let i = 0; i < 26; i++) {
+    spawnDust(hit.point, new THREE.Vector3((Math.random() - 0.5) * 5, Math.random() * 3.5, (Math.random() - 0.3) * 3.5),
+      0.22, 0.7 + Math.random() * 0.5, 0xe2c99a, 0.9);
+  }
   const pts = 100 + Math.round(60 * Math.max(0, 1 - hit.r / (COURSE.boardSize / 2))) + (center ? 40 : 0);
   G.results[idx] = { name: target.name, hit: true, points: pts, r: hit.r, center };
   document.querySelectorAll('#hud-targets .t')[idx].className = 't hit';
   sound.hit(center);
-  exciteCrowd(world.crowd, target.pos.x, center ? 1.3 : 1);
+  if (grand) setTimeout(() => sound.grand(), 450);
+  exciteCrowd(world.crowd, target.pos.x, grand ? 2 : center ? 1.5 : 1.2);
   target.judge.raise = 1;
-  target.judge.timer = 2.5;
-  G.slowmo = 0.7;
-  message(`${target.name}　的中${center ? '<small>正鵠を射る</small>' : ''}`, 1500, 'red');
+  target.judge.timer = 3;
+  // 的中カメラ：板が割れる瞬間をスローで見せる
+  G.hitCam = { t: 0, dur: grand ? 2.0 : center ? 1.6 : 1.3, pos: target.pos.clone(), side: Math.random() < 0.5 ? -1 : 1 };
+  G.slowmo = G.hitCam.dur;
+  G.shake = 0;
+  post.pulse(grand ? 1.6 : center ? 1.2 : 0.9);
+  flashScreen(center || grand);
+  popScore(target.pos, pts, center);
+  stamp(tr('hitName', { n: idx }), center ? tr('bullseye') : '', grand);
   // 矢は板を割って勢いを失う
   arrow.vel.multiplyScalar(0.12);
   arrow.vel.y += 1.5;
   arrow.falling = true;
+}
+
+// 画面の白い閃光
+function flashScreen(gold) {
+  const f = $('flash');
+  f.className = '';
+  void f.offsetWidth;
+  f.className = gold ? 'go gold' : 'go';
+}
+// 得点が的から浮かび上がる
+const pops = [];
+function popScore(pos, pts, center) {
+  const el = document.createElement('div');
+  el.className = 'pop' + (center ? ' gold' : '');
+  el.textContent = '+' + pts;
+  $('hud').appendChild(el);
+  pops.push({ el, pos: pos.clone(), t: 0 });
+}
+function updatePops(rdt) {
+  for (let i = pops.length - 1; i >= 0; i--) {
+    const p = pops[i];
+    p.t += rdt;
+    if (p.t > 1.8) { p.el.remove(); pops.splice(i, 1); continue; }
+    projV.copy(p.pos).add(new THREE.Vector3(0, 0.45 + p.t * 0.25, 0)).project(camera);
+    p.el.style.left = ((projV.x + 1) / 2) * 100 + '%';
+    p.el.style.top = ((1 - projV.y) / 2) * 100 + '%';
+    p.el.style.opacity = projV.z < 1 ? Math.min(1, (1.8 - p.t) * 2) : 0;
+  }
+}
+// 判子のように押される的中の文字
+let stampTimer = null;
+function stamp(title, sub, grand) {
+  const m = $('message');
+  m.innerHTML = `<span class="seal">${tr('sealChar')}</span><span class="word">${title}</span>${sub ? `<small>${sub}</small>` : ''}`;
+  m.className = 'show stamp red';
+  clearTimeout(stampTimer);
+  stampTimer = setTimeout(() => {
+    if (grand) {
+      m.innerHTML = `<span class="word">${tr('allHit')}</span><small>${tr('allHitSub')}</small>`;
+      m.className = '';
+      void m.offsetWidth;
+      m.className = 'show stamp grand';
+      stampTimer = setTimeout(() => (m.className = 'grand'), 2200);
+    } else m.className = 'red';
+  }, 1500);
 }
 
 function updateArrows(dt) {
@@ -676,6 +739,32 @@ function update(dt, rdt) {
     camera.lookAt(tmpV2.copy(rider.eye).addScaledVector(G.aimDir, AIM_DIST));
     camera.fov = 65;
   }
+  // 的中カメラ（実時間で進む）
+  if (G.hitCam) {
+    const hc = G.hitCam;
+    hc.t += rdt;
+    const k = hc.t / hc.dur;
+    if (k >= 1) {
+      G.hitCam = null;
+      G.shake = 0.35;
+      vm.visible = G.fp;
+      rider.setFirstPerson(G.fp);
+    } else {
+      vm.visible = false;
+      rider.setFirstPerson(false);
+      const ang = hc.side * (0.9 - k * 0.9) + 0.25;
+      const dist = 2.4 - k * 0.6;
+      camera.position.set(hc.pos.x + Math.sin(ang) * dist, hc.pos.y + 0.25 + k * 0.35, hc.pos.z + Math.cos(ang) * dist);
+      camera.lookAt(hc.pos.x, hc.pos.y + k * 0.25, hc.pos.z);
+      camera.fov = 48 - k * 6;
+    }
+  }
+  if (G.shake > 0) {
+    G.shake -= rdt;
+    const a = G.shake * 0.08;
+    camera.position.x += (Math.random() - 0.5) * a;
+    camera.position.y += (Math.random() - 0.5) * a;
+  }
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
   const trem = { x: tr * 0.004 * Math.sin(t * 41), y: tr * 0.004 * Math.sin(t * 33) };
@@ -692,7 +781,7 @@ function update(dt, rdt) {
       tg.done = true;
       G.results[i] = { name: tg.name, hit: false, points: 0 };
       document.querySelectorAll('#hud-targets .t')[i].className = 't miss';
-      message(`${tg.name}　外れ`, 1100);
+      message(tr('miss', { n: i }), 1100);
     }
   });
 
@@ -754,22 +843,61 @@ function showResult() {
   const timeBonus = Math.max(0, Math.round((par - time) * 25));
   const allBonus = hits === 3 ? 150 : 0;
   const total = G.results.reduce((s, r) => s + r.points, 0) + timeBonus + allBonus;
-  const titles = ['無念', '一中', '二中', '皆中'];
-  $('result-title').textContent = titles[hits];
-  $('result-rows').innerHTML = G.results.map(r => `<div class="r"><b>${r.name}</b><span>${r.hit ? (r.center ? '正鵠 ' : '的中 ') + r.points + '点' : '外れ'}</span></div>`).join('')
-    + `<div class="r"><b>駆け抜け</b><span>${time.toFixed(2)}秒 ＋${timeBonus}点</span></div>`
-    + (allBonus ? `<div class="r"><b>皆中</b><span>＋${allBonus}点</span></div>` : '');
-  $('result-score').innerHTML = `${total}<small> 点</small>`;
+  const title = tr('titles')[hits];
+  $('result-title').textContent = title;
+  $('result-rows').innerHTML = G.results.map((r, i) => `<div class="r"><b>${tr('targetNames')[i]}</b><span>${r.hit ? tr(r.center ? 'rowCenter' : 'rowHit', { p: r.points }) : tr('rowMiss')}</span></div>`).join('')
+    + `<div class="r"><b>${tr('rowRun')}</b><span>${tr('rowRunVal', { t: time.toFixed(2), b: timeBonus })}</span></div>`
+    + (allBonus ? `<div class="r"><b>${tr('rowAll')}</b><span>${tr('rowAllVal', { b: allBonus })}</span></div>` : '');
+  $('result-score').innerHTML = `${total}<small> ${tr('points')}</small>`;
+  // シェア用の文
+  const marks = G.results.map(r => (r.hit ? (r.center ? '◎' : '○') : '×')).join('');
+  G.shareText = tr('shareText', { title, score: total, diff: tr(G.diffKey), marks });
   const key = 'yabusame.best.' + G.diffKey;
   const best = store.get(key) || 0;
   if (total > best) {
     store.set(key, total);
-    $('result-best').textContent = best ? `新記録！（これまで ${best} 点）` : '初記録';
-  } else $('result-best').textContent = `最高記録 ${best} 点`;
+    $('result-best').textContent = best ? tr('newRecord', { b: best }) : tr('firstRecord');
+  } else $('result-best').textContent = tr('bestRecord', { b: best });
   show('result', true);
   show('touch', false);
   if (hits === 3) sound.cheer(1.6);
 }
+
+// ---------- シェア ----------
+const shareUrl = () => location.origin + location.pathname;
+$('share').addEventListener('click', async () => {
+  const data = { title: tr('pageTitle'), text: G.shareText, url: shareUrl() };
+  if (navigator.share) {
+    try { await navigator.share(data); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  openX();
+});
+function openX() {
+  const u = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(G.shareText) + '&url=' + encodeURIComponent(shareUrl());
+  window.open(u, '_blank', 'noopener,width=600,height=500');
+}
+$('share-x').addEventListener('click', openX);
+$('share-copy').addEventListener('click', async () => {
+  const text = G.shareText + ' ' + shareUrl();
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch { /* 無視 */ }
+    ta.remove();
+  }
+  const b = $('share-copy');
+  b.textContent = tr('copied');
+  setTimeout(() => (b.textContent = tr('copyLink')), 1600);
+});
+
+// ---------- 言語 ----------
+document.querySelectorAll('#lang button').forEach(b => b.addEventListener('click', () => {
+  setLang(b.dataset.v);
+  setDiff(G.diffKey);
+  document.querySelectorAll('#hud-targets .t').forEach((e, i) => (e.textContent = tr('targetGlyphs')[i]));
+}));
 
 function titleCamera(t) {
   // タイトル画面：馬場入り前の人馬を回り込むカメラ
@@ -791,7 +919,7 @@ function frame(now) {
   // スローモーション（的中時）
   if (G.slowmo > 0) G.slowmo -= rdt;
   if (G.releaseSlow > 0) G.releaseSlow -= rdt;
-  const targetScale = G.slowmo > 0 ? 0.28 : G.releaseSlow > 0 ? 0.42 : 1;
+  const targetScale = G.slowmo > 0 ? (G.hitCam ? 0.16 : 0.28) : G.releaseSlow > 0 ? 0.42 : 1;
   G.timeScale += (targetScale - G.timeScale) * Math.min(1, rdt * (targetScale < 1 ? 20 : 4));
   const dt = rdt * G.timeScale;
 
@@ -809,6 +937,8 @@ function frame(now) {
     } else update(dt, rdt);
   }
   updateDust(dt);
+  fx.update(dt, G.clock);
+  updatePops(rdt);
   updateCrowd(world.crowd, dt, G.clock);
   updateFlags(world.flags, G.clock, G.wind.lengthSq() > 0 ? G.wind : new THREE.Vector3(1, 0, 0.5));
 
@@ -832,6 +962,7 @@ window.addEventListener('resize', () => {
 });
 
 // 起動
+applyI18n();
 rider.setFirstPerson(false);
 vm.visible = false;
 setDiff(G.diffKey);
@@ -845,6 +976,8 @@ function step(n = 1, dt = 1 / 60) {
     G.clock += dt;
     update(dt, dt);
     updateDust(dt);
+    fx.update(dt, G.clock);
+    updatePops(dt);
   }
 }
-window.__yabusame = { G, world, camera, horse, rider, startRun, newRun, shoot, step, predictImpact };
+window.__yabusame = { G, world, camera, horse, rider, startRun, newRun, shoot, step, predictImpact }; // @web-only

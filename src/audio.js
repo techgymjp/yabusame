@@ -230,7 +230,40 @@ export class Sound {
       k.connect(kg).connect(this.master);
       k.start(tt); k.stop(tt + 0.08);
     }
-    this.cheer(center ? 1.4 : 1);
+    this.boom(center ? 1.3 : 1);
+    this.cheer(center ? 1.6 : 1.2);
+  }
+
+  // 太鼓の一打（ドン）
+  boom(level = 1, delay = 0) {
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime + delay;
+    const o = c.createOscillator();
+    o.frequency.setValueAtTime(110, t);
+    o.frequency.exponentialRampToValueAtTime(42, t + 0.5);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(1.0 * level, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    const n = this.noiseSrc();
+    const f = c.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = 260;
+    const ng = c.createGain();
+    ng.gain.setValueAtTime(0.7 * level, t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+    o.connect(g).connect(this.master);
+    n.connect(f).connect(ng).connect(this.master);
+    o.start(t); o.stop(t + 1);
+    n.start(t, Math.random()); n.stop(t + 0.2);
+  }
+
+  // 皆中：太鼓の連打と大歓声
+  grand() {
+    if (!this.ctx) return;
+    for (let i = 0; i < 9; i++) this.boom(0.55 + i * 0.06, i * 0.11);
+    this.boom(1.4, 1.15);
+    this.boom(1.4, 1.5);
+    this.cheer(2.2);
   }
 
   thud() {
@@ -259,7 +292,7 @@ export class Sound {
     const g = c.createGain();
     g.gain.setValueAtTime(0.0001, t);
     g.gain.linearRampToValueAtTime(0.35 * level, t + 0.25);
-    g.gain.setTargetAtTime(0.0001, t + 0.9, 0.6);
+    g.gain.setTargetAtTime(0.0001, t + 0.9 + level * 0.5, 0.6 + level * 0.2);
     n.connect(bp).connect(g).connect(this.master);
     n.start(t, Math.random()); n.stop(t + 3.5);
     for (let i = 0; i < 70 * level; i++) {

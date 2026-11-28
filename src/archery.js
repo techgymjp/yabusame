@@ -391,32 +391,43 @@ export function segmentHitsBoard(p0, p1, target, size) {
 }
 
 // 板が割れて飛ぶ木片
-export function shatterBoard(scene, target, hit, arrowVel, size) {
+export function shatterBoard(scene, target, hit, arrowVel, size, power = 1) {
   const pieces = [];
-  const n = 5;
-  const w = size / n;
   const faceMat = target.boardMats[4];
   const edgeMat = target.boardMats[0];
-  for (let i = 0; i < n; i++) {
-    // 縦方向に割れる（板目に沿って）
-    const geo = new THREE.BoxGeometry(w * 0.96, size * (0.75 + Math.random() * 0.25), 0.018);
-    const uv = geo.attributes.uv;
-    for (let j = 0; j < uv.count; j++) {
-      uv.setX(j, (i + uv.getX(j)) / n);
+  // 当たった点を中心に、板目に沿った縦の割れ + 横のひびで不揃いに割れる
+  const cols = [-0.5];
+  for (let i = 1; i < 5; i++) cols.push(-0.5 + i / 5 + (Math.random() - 0.5) * 0.08);
+  cols.push(0.5);
+  for (let i = 0; i < cols.length - 1; i++) {
+    const rows = [-0.5];
+    const nr = 1 + Math.floor(Math.random() * 3);
+    for (let j = 1; j < nr; j++) rows.push(-0.5 + j / nr + (Math.random() - 0.5) * 0.15);
+    rows.push(0.5);
+    for (let j = 0; j < rows.length - 1; j++) {
+      const u0 = cols[i], u1 = cols[i + 1], v0 = rows[j], v1 = rows[j + 1];
+      const w = (u1 - u0) * size, h = (v1 - v0) * size;
+      const geo = new THREE.BoxGeometry(w * 0.97, h * 0.97, 0.018);
+      const uv = geo.attributes.uv;
+      for (let k = 0; k < uv.count; k++) {
+        uv.setXY(k, (u0 + 0.5) + uv.getX(k) * (u1 - u0), (v0 + 0.5) + uv.getY(k) * (v1 - v0));
+      }
+      const m = new THREE.Mesh(geo, [edgeMat, edgeMat, edgeMat, edgeMat, faceMat, edgeMat]);
+      m.castShadow = true;
+      m.position.set(target.pos.x + ((u0 + u1) / 2) * size, target.pos.y + ((v0 + v1) / 2) * size, target.pos.z);
+      scene.add(m);
+      const away = m.position.clone().sub(hit.point);
+      away.z = 0;
+      const dist = away.length();
+      away.normalize();
+      const k = (1.8 + Math.random() * 2.2) * power / (0.6 + dist * 3);
+      const v = new THREE.Vector3(away.x * k * 2.2 + arrowVel.x * 0.1, 1.5 + away.y * k * 1.5 + Math.random() * 3 * power, arrowVel.z * 0.15 - Math.random() * 2 * power);
+      pieces.push({
+        mesh: m, vel: v,
+        ang: new THREE.Vector3((Math.random() - 0.5) * 30, (Math.random() - 0.5) * 30, (Math.random() - 0.5) * 30).multiplyScalar(power),
+        rest: false,
+      });
     }
-    const m = new THREE.Mesh(geo, [edgeMat, edgeMat, edgeMat, edgeMat, faceMat, edgeMat]);
-    m.castShadow = true;
-    m.position.set(target.pos.x - size / 2 + w * (i + 0.5), target.pos.y, target.pos.z);
-    scene.add(m);
-    const side = (m.position.x - hit.point.x) / (size / 2);
-    const v = new THREE.Vector3(arrowVel.x * 0.12 + side * 2.5 + (Math.random() - 0.5) * 1.5,
-      1.5 + Math.random() * 3,
-      arrowVel.z * 0.18 - Math.random() * 1.5);
-    pieces.push({
-      mesh: m, vel: v,
-      ang: new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20),
-      rest: false,
-    });
   }
   return pieces;
 }

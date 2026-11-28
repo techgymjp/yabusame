@@ -11,6 +11,8 @@
 | 左ボタン長押し / 離す | 弓を引く / 矢を放つ |
 | W・S | 馬を追う・抑える |
 | C | 視点の切替（肩越し・一人称・後方） |
+
+日本語と英語に対応しています（あそびかた・設定の画面で切り替え）。
 | Esc | 一時停止 |
 
 スマートフォンでは画面をなぞって狙い、「引く」ボタンを押して離すと放ちます。
@@ -54,6 +56,38 @@ Surface Nets で一体の曲面メッシュを生成しています。骨格（�
 - 中級：矢4本・約50km/h・照準点のみ
 - 本式：一的一矢（3本）・約56km/h・照準表示なし
 
+## Android アプリ
+
+パッケージ名 `jp.techgym.yabusame`。Capacitor 8 でゲームのファイルをアプリに同梱しています（オフラインで遊べます）。
+広告は AdMob（バナー・全画面・リワード）です。
+
+- 動作確認用 APK（テスト広告・デバッグ署名）のリリース画面：https://github.com/techgymjp/yabusame/releases/tag/android-latest
+- APK を直接ダウンロード：https://github.com/techgymjp/yabusame/releases/latest/download/yabusame.apk
+
+<img src="docs/apk-qr.png" width="200" alt="リリース画面の QR コード">
+
+main ブランチに push すると GitHub Actions（`.github/workflows/android.yml`）が APK を作り、上のリリース画面に載せます。
+Secrets（`ANDROID_KEYSTORE_BASE64` など 4 つ）が登録されていれば、Google Play 用の署名付き AAB（本番広告）も
+Artifacts の `yabusame-release-aab` に作ります。
+
+広告の出し方
+
+| 種類 | 場面 |
+| --- | --- |
+| バナー | タイトル・あそびかた・ポーズ・結果画面の下（プレイ中は出さない） |
+| 全画面 | プレイ開始、タイトルへ戻る、ポーズからの再開、結果画面からもう一度、のたび |
+| リワード | 外した的を射直す（1 ゲーム 3 回まで。結果画面とシェア文に回数を表示） |
+
+手元でアプリ用のファイルを作るとき：
+
+```bash
+npm ci
+```
+
+```bash
+npm run android:sync
+```
+
 ## ローカルで動かす
 
 ES モジュールを使うので、ファイルを直接開かずに簡易サーバで配信してください。
@@ -65,3 +99,10 @@ python3 -m http.server 8000
 ## 公開
 
 GitHub Pages の公開元を `main` ブランチのルート（`/`）に設定すると、そのまま公開できます。
+
+## ライセンス
+
+著作権はテックジム株式会社に帰属します（All rights reserved）。許可なく複製・改変・再配布すること、
+Web サイトやアプリとして公開・販売すること、名前・アイコン・画像を使うことを禁止します。
+テックジムの受講生が学習目的で複製・改変することは許可しますが、アプリストアでの公開や広告の掲載などの商用利用はできません。
+詳しくは `LICENSE` を見てください。同梱の three.js は MIT License です。

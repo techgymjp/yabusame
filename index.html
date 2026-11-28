@@ -39,14 +39,6 @@
     <h1>流鏑馬</h1>
     <p class="sub" data-i18n="sub">YABUSAME — 騎射の神事</p>
     <p class="intro" data-i18n="tagline">疾走する馬上から、三つの的を射抜け。</p>
-    <div class="row">
-      <span class="label" data-i18n="difficulty">難易度</span>
-      <div class="seg" id="difficulty">
-        <button data-v="easy" data-i18n="easy">初級</button>
-        <button data-v="normal" class="on" data-i18n="normal">中級</button>
-        <button data-v="hard" data-i18n="hard">本式</button>
-      </div>
-    </div>
     <p class="diffnote" id="diffnote"></p>
     <p class="best" id="best"></p>
     <button id="start" class="big" data-i18n="start">馬場入り</button>
@@ -98,17 +90,6 @@
   </div>
 </div>
 
-<div id="retry" class="hidden">
-  <div class="retry-box">
-    <div data-i18n="retryQ">広告を見て、この的を射直しますか？</div>
-    <div class="retry-btns">
-      <button id="retry-yes" class="big small" data-i18n="retryYes">射直す</button>
-      <button id="retry-no" class="ghost" data-i18n="retryNo">先へ進む</button>
-    </div>
-    <div class="retry-bar"><div id="retry-fill"></div></div>
-  </div>
-</div>
-
 <div id="pause" class="screen hidden">
   <div class="panel small">
     <h2 data-i18n="paused">一時停止</h2>
@@ -128,6 +109,8 @@
       <button id="share-x" class="share-btn x" data-i18n="shareX">X でポスト</button> <!-- @web-only -->
       <button id="share-copy" class="share-btn ghosty" data-i18n="copyLink">リンクをコピー</button> <!-- @web-only -->
     </div>
+    <button id="easier" class="easier hidden"></button>
+    <p class="best" id="easier-note"></p>
     <button id="again" class="big" data-i18n="again">もう一度</button>
     <button id="toTitle" class="ghost" data-i18n="toTitle">タイトルへ</button>
   </div>

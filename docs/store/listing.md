@@ -51,12 +51,12 @@
 ・箏・篠笛・太鼓による和のBGM
 
 ■ 三つの難易度
+・本式：一つの的に一矢。照準表示なしの真剣勝負。まずはここから
+・中級：矢4本、照準点つき
 ・初級：矢5本、着弾予測つき。弓矢のゲームが初めての方も
-・中級：矢4本、照準点のみ
-・本式：一つの的に一矢。照準表示なしの真剣勝負
+・うまくいかないときは、結果画面で広告を見て一段やさしい難易度にチャレンジ
 
 ■ そのほか
-・外した的は、広告を見て射直せる（1ゲーム3回まで）
 ・肩越し・一人称・後方の3つの視点
 ・ハイスコアを記録。結果はSNSでシェアできる
 ・日本語・英語に対応。通信なしでも遊べます
@@ -113,12 +113,12 @@ No archery or riding experience needed — one finger is all it takes to raise, 
 • Original Japanese music with koto, bamboo flute and taiko drums
 
 ■ Three difficulty levels
-• Easy: 5 arrows with an impact marker — great for first-time archers
+• Master: one arrow per target, no aiming aid — every ride starts here
 • Normal: 4 arrows with an aim dot
-• Master: one arrow per target, no aiming aid
+• Easy: 5 arrows with an impact marker — great for first-time archers
+• Too hard? Watch an ad on the results screen to try an easier level
 
 ■ Also
-• Missed a target? Watch an ad to shoot it again (up to 3 times per game)
 • Shoulder, first-person and chase cameras
 • High scores and sharing
 • English and Japanese. Plays offline

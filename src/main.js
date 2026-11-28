@@ -130,7 +130,7 @@ function updateDust(dt) {
 const G = {
   state: 'loading', // title / ready / run / finish / result / paused
   prevState: null,
-  diffKey: store.get('yabusame.diff') || 'normal',
+  diffKey: 'hard', // いつも本式から始める（結果画面で広告を見ると一段やさしくできる）
   sens: store.get('yabusame.sens') || 1,
   fp: false,
   camMode: CAM_MODES_DEFAULT(),
@@ -178,8 +178,6 @@ for (const t of COURSE.targets) {
 
 function setDiff(k) {
   G.diffKey = k;
-  store.set('yabusame.diff', k);
-  document.querySelectorAll('#difficulty button').forEach(b => b.classList.toggle('on', b.dataset.v === k));
   $('diffnote').textContent = tr(DIFF[k].note);
   const best = store.get('yabusame.best.' + k);
   $('best').textContent = best ? tr('best', { d: tr(k), s: best }) : '';
@@ -320,7 +318,33 @@ function startFromMenu() {
 }
 $('start').addEventListener('click', startFromMenu);
 $('help-start').addEventListener('click', startFromMenu);
-$('again').addEventListener('click', () => { sound.resume(); lockPointer(); withInterstitial(newRun); });
+$('again').addEventListener('click', () => { sound.resume(); lockPointer(); withInterstitial(() => { setDiff('hard'); newRun(); }); });
+// 結果画面：広告を見て一段やさしい難易度にチャレンジ（本式→中級→初級）。Web 版は広告なしで選べる
+const EASIER = { hard: 'normal', normal: 'easy' };
+$('easier').addEventListener('click', async () => {
+  const next = EASIER[G.diffKey];
+  if (!next || busy) return;
+  sound.resume();
+  if (Ads.available) {
+    busy = true;
+    const r = await Ads.showRewarded();
+    busy = false;
+    if (r !== 'rewarded') {
+      // 最後まで見なかった・読み込めなかったときは何もしない
+      if (r === 'unavailable') { $('easier-note').textContent = tr('adFailed'); }
+      return;
+    }
+  }
+  lockPointer();
+  setDiff(next);
+  newRun();
+});
+function updateEasierButton() {
+  const next = EASIER[G.diffKey];
+  $('easier').classList.toggle('hidden', !next);
+  $('easier-note').textContent = '';
+  if (next) $('easier').textContent = tr(Ads.available ? 'easierAd' : 'easierWeb', { d: tr(next) });
+}
 $('toTitle').addEventListener('click', () => withInterstitial(toTitle));
 $('quit').addEventListener('click', () => withInterstitial(toTitle));
 $('resume').addEventListener('click', () => withInterstitial(resume));
@@ -337,8 +361,8 @@ Ads.initDone.then(() => { if (Ads.privacyOptionsRequired) $('adPrivacy').classLi
 
 function toTitle() {
   G.state = 'title';
-  show('title', true); show('help', false); show('result', false); show('pause', false); show('hud', false); show('touch', false); show('retry', false);
-  setDiff(G.diffKey);
+  show('title', true); show('help', false); show('result', false); show('pause', false); show('hud', false); show('touch', false);
+  setDiff('hard');
   resetCourse();
   rider.setFirstPerson(false);
   vm.visible = false;
@@ -346,8 +370,7 @@ function toTitle() {
   music.play('title');
 }
 function pause() {
-  if (G.state === 'paused' || !['ready', 'run', 'finish', 'retry'].includes(G.state)) return;
-  if (G.state === 'retry') hideRetry(false);
+  if (G.state === 'paused' || !['ready', 'run', 'finish'].includes(G.state)) return;
   G.prevState = G.state;
   G.state = 'paused';
   G.wantDraw = false;
@@ -365,7 +388,7 @@ function resume() {
 // 戻るボタン（Android）：プレイ中はポーズ、ポーズ中は再開、メニューではアプリを終了
 if (isApp && cap.Plugins && cap.Plugins.App) {
   cap.Plugins.App.addListener('backButton', () => {
-    if (['ready', 'run', 'finish', 'retry'].includes(G.state)) pause();
+    if (['ready', 'run', 'finish'].includes(G.state)) pause();
     else if (G.state === 'paused') withInterstitial(resume);
     else if (G.state === 'help') withInterstitial(toTitle);
     else cap.Plugins.App.exitApp();
@@ -376,62 +399,6 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) { pause(); sound.suspend(); }
   else sound.release();
 });
-
-// ---------- 射直し（リワード広告） ----------
-const RETRY_MAX = 3;
-function offerRetry(idx) {
-  if (!Ads.available || G.retries >= RETRY_MAX) return;
-  // 外れたことを見届けてから聞く
-  G.retryPending = { idx, at: G.clock + 1.6 };
-}
-function showRetry(idx) {
-  G.retryPending = null;
-  G.retryPrev = G.state;
-  G.state = 'retry';
-  G.retryIdx = idx;
-  G.retryTimer = 6;
-  G.wantDraw = false;
-  $('retry').querySelector('[data-i18n="retryQ"]').textContent = tr('retryQ', { n: RETRY_MAX - G.retries });
-  show('retry', true);
-}
-function hideRetry(cont = true) {
-  show('retry', false);
-  if (cont && G.state === 'retry') G.state = G.retryPrev;
-}
-$('retry-no').addEventListener('click', () => hideRetry());
-$('retry-yes').addEventListener('click', async () => {
-  if (busy) return;
-  busy = true;
-  const idx = G.retryIdx;
-  show('retry', false);
-  const r = await Ads.showRewarded();
-  busy = false;
-  if (G.state !== 'retry') return;
-  G.state = G.retryPrev;
-  // 広告を最後まで見たときだけ射直せる
-  if (r === 'rewarded') doRetry(idx);
-});
-function doRetry(idx) {
-  const snap = G.snaps[idx];
-  const tg = world.targets[idx];
-  if (!snap) return;
-  for (const a of G.arrows) { scene.remove(a.mesh); a.whistle && a.whistle.stop(); if (a.trail) scene.remove(a.trail.mesh); }
-  G.arrows = [];
-  // 的の手前に戻り、矢の数と時間もその時点に戻す（風などの条件は同じ）
-  G.x = snap.x;
-  G.arrowsLeft = snap.arrowsLeft;
-  G.nocked = 1; G.nockTimer = 0; G.releaseT = 9; G.draw = 0; G.raise = 0;
-  if (G.t0 !== null) G.t0 = G.clock - snap.runTime;
-  G.finalTime = null;
-  tg.done = false;
-  tg.board.visible = true;
-  G.results[idx] = { name: tg.name, hit: false, points: 0, r: null };
-  document.querySelectorAll('#hud-targets .t')[idx].className = 't';
-  G.retries++;
-  if (G.state === 'finish') G.state = 'run';
-  G.finishTimer = 0;
-  message(tr('retryDone'), 1000);
-}
 
 function resetCourse() {
   for (const a of G.arrows) { scene.remove(a.mesh); a.whistle && a.whistle.stop(); if (a.trail) scene.remove(a.trail.mesh); }
@@ -460,10 +427,9 @@ function newRun() {
   const ang = Math.random() * Math.PI * 2;
   G.wind.set(Math.cos(ang), 0, Math.sin(ang)).multiplyScalar(Math.random() * d.wind);
   G.finishTimer = 0;
-  G.retries = 0; G.snaps = []; G.retryPending = null;
   G.state = 'ready';
   applyCam();
-  show('title', false); show('help', false); show('result', false); show('pause', false); show('hud', true); show('retry', false);
+  show('title', false); show('help', false); show('result', false); show('pause', false); show('hud', true);
   updateBanner();
   music.play('ready');
   show('touch', isTouch);
@@ -899,12 +865,8 @@ function update(dt, rdt) {
       G.results[i] = { name: tg.name, hit: false, points: 0 };
       document.querySelectorAll('#hud-targets .t')[i].className = 't miss';
       message(tr('miss', { n: i }), 1100);
-      offerRetry(i);
     }
-    // 射直し用：的の手前を通るときの状態を覚えておく
-    if (!G.snaps[i] && G.x >= tg.pos.x - 32) G.snaps[i] = { x: G.x, arrowsLeft: G.arrowsLeft, runTime: G.runTime };
   });
-  if (G.retryPending && G.clock >= G.retryPending.at && !G.hitCam) showRetry(G.retryPending.idx);
 
   // 的役の扇
   for (const j of world.judges) {
@@ -917,7 +879,7 @@ function update(dt, rdt) {
   if (G.state === 'finish') {
     G.finishTimer += dt;
     const flying = G.arrows.some(a => a.alive && !a.falling);
-    if (((G.speed < 0.5 && !flying) || G.finishTimer > 7) && !G.retryPending) showResult();
+    if (((G.speed < 0.5 && !flying) || G.finishTimer > 7)) showResult();
   }
 
   // HUD
@@ -969,17 +931,18 @@ function showResult() {
   $('result-rows').innerHTML = G.results.map((r, i) => `<div class="r"><b>${tr('targetNames')[i]}</b><span>${r.hit ? tr(r.center ? 'rowCenter' : 'rowHit', { p: r.points }) : tr('rowMiss')}</span></div>`).join('')
     + `<div class="r"><b>${tr('rowRun')}</b><span>${tr('rowRunVal', { t: time.toFixed(2), b: timeBonus })}</span></div>`
     + (allBonus ? `<div class="r"><b>${tr('rowAll')}</b><span>${tr('rowAllVal', { b: allBonus })}</span></div>` : '')
-    + (G.retries ? `<div class="r"><b>${tr('rowRetry')}</b><span>${tr('rowRetryVal', { n: G.retries })}</span></div>` : '');
+    + '';
   $('result-score').innerHTML = `${total}<small> ${tr('points')}</small>`;
   // シェア用の文
   const marks = G.results.map(r => (r.hit ? (r.center ? '◎' : '○') : '×')).join('');
-  G.shareText = tr('shareText', { title, score: total, diff: tr(G.diffKey), marks, retry: G.retries ? tr('shareRetry', { n: G.retries }) : '' });
+  G.shareText = tr('shareText', { title, score: total, diff: tr(G.diffKey), marks });
   const key = 'yabusame.best.' + G.diffKey;
   const best = store.get(key) || 0;
   if (total > best) {
     store.set(key, total);
     $('result-best').textContent = best ? tr('newRecord', { b: best }) : tr('firstRecord');
   } else $('result-best').textContent = tr('bestRecord', { b: best });
+  updateEasierButton();
   show('result', true);
   show('touch', false);
   updateBanner();
@@ -1054,12 +1017,6 @@ function frame(now) {
   const dt = rdt * G.timeScale;
 
   if (document.body.dataset.state !== G.state) document.body.dataset.state = G.state; // 画面ごとの表示切替（CSS）
-  if (G.state === 'retry') {
-    // 射直しの案内は数秒で自動的に消して先へ進める
-    G.retryTimer -= rdt;
-    $('retry-fill').style.width = Math.max(0, G.retryTimer / 6 * 100) + '%';
-    if (G.retryTimer <= 0 && !busy) hideRetry();
-  }
   if (G.frozen) {
     // テスト用の停止
   } else if (G.state === 'title') {
